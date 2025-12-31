@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { X, Camera, RefreshCw } from 'lucide-react'
+import { X, Camera, RefreshCw, Keyboard, AlertTriangle } from 'lucide-react'
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void
@@ -13,19 +13,20 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
   const [error, setError] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
   const [hasScanned, setHasScanned] = useState(false)
+  const [showManualInput, setShowManualInput] = useState(false)
+  const [manualBarcode, setManualBarcode] = useState('')
   const html5QrCodeRef = useRef<any>(null)
   const mountedRef = useRef(true)
 
   const stopScanner = useCallback(async () => {
     if (html5QrCodeRef.current) {
       try {
-        const state = html5QrCodeRef.current.getState()
-        // State 2 = SCANNING, State 3 = PAUSED
+        const state = html5QrCodeRef.current.getState?.()
         if (state === 2 || state === 3) {
           await html5QrCodeRef.current.stop()
         }
       } catch (err) {
-        console.log('Scanner stop error (non-critical):', err)
+        // Ignore stop errors
       }
       html5QrCodeRef.current = null
     }
@@ -35,6 +36,15 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
     await stopScanner()
     onClose()
   }, [stopScanner, onClose])
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const barcode = manualBarcode.trim()
+    if (barcode && /^\d{8,14}$/.test(barcode)) {
+      onScan(barcode)
+      onClose()
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true
@@ -212,22 +222,62 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
                 <div className="text-4xl mb-3">📷</div>
                 <p className="text-red-400 font-medium mb-2">Camera Error</p>
                 <p className="text-gray-300 text-sm mb-4">{error}</p>
-                <div className="flex gap-2 justify-center">
+                <div className="space-y-3">
                   <button
                     onClick={retry}
-                    className="px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2"
+                    className="w-full px-4 py-3 bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    Retry
+                    Try Again
                   </button>
                   <button
-                    onClick={handleClose}
-                    className="px-4 py-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+                    onClick={() => setShowManualInput(true)}
+                    className="w-full px-4 py-3 bg-white/10 rounded-xl hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
                   >
-                    Close
+                    <Keyboard className="w-4 h-4" />
+                    Enter Barcode Manually
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Manual input modal */}
+          {showManualInput && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900 rounded-2xl p-6 z-20">
+              <form onSubmit={handleManualSubmit} className="w-full">
+                <h3 className="text-white font-medium text-lg mb-4 text-center">Enter Barcode</h3>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={manualBarcode}
+                  onChange={(e) => setManualBarcode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Enter 8-14 digit barcode"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl tracking-widest placeholder:text-gray-500 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                  maxLength={14}
+                />
+                <p className="text-gray-400 text-xs text-center mt-2 mb-4">
+                  Find the barcode number below the lines
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualInput(false)}
+                    className="flex-1 px-4 py-3 bg-white/10 rounded-xl hover:bg-white/20 transition-colors text-white"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!/^\d{8,14}$/.test(manualBarcode)}
+                    className="flex-1 px-4 py-3 bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Submit
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
@@ -238,7 +288,7 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
           />
 
           {/* Scanning guide overlay */}
-          {!error && !isInitializing && (
+          {!error && !isInitializing && !showManualInput && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
               <div className="border-2 border-white/50 rounded-lg w-64 h-24 relative animate-pulse">
                 <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-400"></div>
@@ -254,7 +304,15 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
       {/* Instructions */}
       <div className="p-6 text-center text-white/70 text-sm">
         <p>Position the barcode within the frame</p>
-        <p className="text-white/40 mt-1">Supports EAN, UPC, QR codes and more</p>
+        {!error && !isInitializing && (
+          <button
+            onClick={() => setShowManualInput(true)}
+            className="mt-3 py-2 text-emerald-400 text-sm flex items-center justify-center gap-2 w-full"
+          >
+            <Keyboard className="w-4 h-4" />
+            Can't scan? Enter manually
+          </button>
+        )}
       </div>
     </div>
   )

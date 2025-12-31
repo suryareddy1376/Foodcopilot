@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User, Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import { supabase, isDbConfigured } from '@/lib/supabase'
 
 export interface UserProfile {
   id: string
@@ -55,6 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Skip auth if Supabase is not configured
+    if (!isDbConfigured) {
+      console.warn('Supabase not configured, auth disabled')
+      setIsLoading(false)
+      return
+    }
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)

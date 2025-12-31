@@ -20,6 +20,15 @@
           "value": "no-store, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=self"
+        }
+      ]
     }
   ]
 }
