@@ -29,14 +29,24 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
         return
       }
 
+      // Check for secure context (HTTPS or localhost)
+      if (!window.isSecureContext) {
+        setError('Camera requires HTTPS. Your Vercel deployment should provide this automatically.')
+        return
+      }
+
       // Check if mediaDevices API is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError('Camera not supported on this device or browser. Please use HTTPS or localhost.')
+        setError('Camera API not available. Please use a modern browser with HTTPS.')
         return
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+        video: { 
+          facingMode: { ideal: 'environment' }, 
+          width: { ideal: 1920 }, 
+          height: { ideal: 1080 } 
+        }
       })
       
       if (videoRef.current) {
@@ -46,22 +56,37 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
         setError(null)
       }
     } catch (err: any) {
+      console.error('Camera error:', err)
       let errorMessage = 'Could not access camera. '
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMessage += 'Please allow camera permissions in your browser settings.'
+        errorMessage = 'Camera permission denied. Please allow camera access in your browser settings and try again.'
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        errorMessage += 'No camera found on this device.'
+        errorMessage = 'No camera found on this device. Try uploading a photo instead.'
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        errorMessage += 'Camera is already in use by another application.'
+        errorMessage = 'Camera is in use by another app. Close other apps and try again.'
       } else if (err.name === 'SecurityError') {
-        errorMessage += 'Camera access requires HTTPS. Please use localhost or a secure connection.'
+        errorMessage = 'Camera blocked by browser security. Check that you are using HTTPS.'
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage = 'Camera settings not supported. Trying with default settings...'
+        // Try again with basic constraints
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream
+            streamRef.current = stream
+            setIsCameraActive(true)
+            setError(null)
+            return
+          }
+        } catch {
+          errorMessage = 'Could not start camera with any settings.'
+        }
       } else {
         errorMessage += err.message || 'Unknown error occurred.'
       }
       
       setError(errorMessage)
-      console.error('Camera error:', err)
     }
   }
 

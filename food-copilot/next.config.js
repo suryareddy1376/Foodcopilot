@@ -2,21 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // Webpack config for html5-qrcode compatibility
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // html5-qrcode uses dynamic imports that need this
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      }
-    }
-    return config
-  },
-  
-  // Headers for camera permissions
+  // Headers for camera permissions on Vercel
   async headers() {
     return [
       {
