@@ -30,26 +30,63 @@ interface ScanHistoryProps {
 }
 
 export default function ScanHistory({ isOpen, onClose, onRescan, onCompare }: ScanHistoryProps) {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const [history, setHistory] = useState<ScanHistoryItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [isClearing, setIsClearing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const loadHistory = useCallback(async () => {
-    if (!user) return
-    const data = await getScanHistory(user.id)
-    setHistory(data)
+    console.log('loadHistory called, user:', user?.id || 'null')
+    
+    if (!user) {
+      console.log('No user, setting error')
+      setError('Please log in to view scan history')
+      setHistory([])
+      return
+    }
+    
+    setError(null)
+    console.log('Loading history for user:', user.id)
+    
+    try {
+      const data = await getScanHistory(user.id)
+      console.log('History loaded:', data.length, 'items')
+      setHistory(data)
+    } catch (err: any) {
+      console.error('Failed to load history:', err)
+      setError('Failed to load history. Please try again.')
+      setHistory([])
+    }
   }, [user])
 
   useEffect(() => {
-    if (isOpen && user) {
+    console.log('ScanHistory useEffect - isOpen:', isOpen, 'authLoading:', authLoading, 'user:', user?.id || 'null')
+    
+    if (!isOpen) return
+    
+    // Still loading auth state
+    if (authLoading) {
       setIsLoading(true)
-      loadHistory().finally(() => setIsLoading(false))
+      return
     }
-  }, [isOpen, user, loadHistory])
+    
+    if (user) {
+      setIsLoading(true)
+      setError(null)
+      loadHistory().finally(() => {
+        console.log('loadHistory finished, setting isLoading to false')
+        setIsLoading(false)
+      })
+    } else {
+      setIsLoading(false)
+      setHistory([])
+      setError('Please log in to view scan history')
+    }
+  }, [isOpen, user, authLoading, loadHistory])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -209,8 +246,20 @@ export default function ScanHistory({ isOpen, onClose, onRescan, onCompare }: Sc
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+              <p className="text-sm text-slate-500 mt-3">Loading history...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 px-6">
+              <Package className="w-12 h-12 text-red-300 mx-auto mb-4" />
+              <h3 className="font-medium text-red-600">{error}</h3>
+              <button
+                onClick={handleRefresh}
+                className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors"
+              >
+                Try Again
+              </button>
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-12 px-6">

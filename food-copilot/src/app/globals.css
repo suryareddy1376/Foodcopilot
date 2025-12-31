@@ -195,3 +195,32 @@ body {
 .gradient-text {
   @apply bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent;
 }
+
+/* FAB expand animation */
+@keyframes fadeInUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px) scale(0.95); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.2s ease-out forwards;
+}
+
+/* Thesys UI Component Styles */
+.thesys-ui {
+  @apply text-slate-700;
+}
+
+.thesys-ui h2 {
+  @apply text-xl font-bold text-slate-800 mb-2;
+}
+
+.thesys-ui p {
+  @apply leading-relaxed;
+}

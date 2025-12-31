@@ -41,6 +41,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!authHeader) {
+    console.log('POST /api/history: No auth header')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
   const { data: { user }, error: authError } = await supabase.auth.getUser(token)
   
   if (authError || !user) {
+    console.log('POST /api/history: Auth error:', authError?.message)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -58,24 +60,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Barcode is required' }, { status: 400 })
   }
 
+  console.log('POST /api/history: Saving scan for user:', user.id, 'barcode:', barcode)
+
   const { data, error } = await supabase
     .from('scan_history')
     .insert({
       user_id: user.id,
       barcode,
-      product_name,
-      brand,
-      nova_group,
-      nutri_score,
-      product_id
+      product_name: product_name || null,
+      brand: brand || null,
+      nova_group: nova_group || null,
+      nutri_score: nutri_score || null,
+      product_id: product_id || null
     })
     .select()
     .single()
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to save to history' }, { status: 500 })
+    console.error('POST /api/history: Insert error:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    })
+    return NextResponse.json({ 
+      error: 'Failed to save to history',
+      details: error.message 
+    }, { status: 500 })
   }
 
+  console.log('POST /api/history: Successfully saved:', data?.id)
   return NextResponse.json({ item: data })
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { createContext, useContext } from 'react'
 import {
   Shield,
   ShieldCheck,
@@ -33,8 +33,47 @@ import {
   EyeOff,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  Sparkles,
+  ScanBarcode,
+  Camera,
+  ArrowRight,
+  Search,
+  MessageCircle,
+  RefreshCw,
+  ThumbsUp,
+  ThumbsDown,
+  Share2,
+  BookmarkPlus,
+  ExternalLink,
+  QrCode,
+  Scan,
+  FileText,
+  ListChecks,
+  CircleCheck,
+  CircleX,
+  CircleAlert
 } from 'lucide-react'
+
+// Context for interactive actions from parent
+interface ActionHandlers {
+  onScanBarcode?: () => void
+  onScanIngredients?: () => void
+  onAskQuestion?: (question: string) => void
+  onCompareProducts?: (barcodes: string[]) => void
+  onViewHistory?: () => void
+  onFeedback?: (type: 'positive' | 'negative', messageId?: string) => void
+}
+
+const ActionContext = createContext<ActionHandlers>({})
+
+function useActionHandlers() {
+  return useContext(ActionContext)
+}
+
+function ActionProvider({ children, handlers }: { children: React.ReactNode; handlers: ActionHandlers }) {
+  return <ActionContext.Provider value={handlers}>{children}</ActionContext.Provider>
+}
 
 // Icon mapping
 const iconMap: Record<string, any> = {
@@ -68,6 +107,26 @@ const iconMap: Record<string, any> = {
   'trending-up': TrendingUp,
   'trending-down': TrendingDown,
   'minus': Minus,
+  'sparkles': Sparkles,
+  'scan-barcode': ScanBarcode,
+  'camera': Camera,
+  'arrow-right': ArrowRight,
+  'search': Search,
+  'message': MessageCircle,
+  'refresh': RefreshCw,
+  'thumbs-up': ThumbsUp,
+  'thumbs-down': ThumbsDown,
+  'share': Share2,
+  'bookmark': BookmarkPlus,
+  'external-link': ExternalLink,
+  'qr-code': QrCode,
+  'scan': Scan,
+  'file-text': FileText,
+  'list-checks': ListChecks,
+  'circle-check': CircleCheck,
+  'circle-x': CircleX,
+  'circle-alert': CircleAlert,
+  'message-circle': MessageCircle,
 }
 
 // Types for Thesys UI components
@@ -92,6 +151,23 @@ function Header({ title, subtitle }: { title?: string; subtitle?: string }) {
     <div className="mb-4">
       <h2 className="text-xl font-bold text-slate-800">{title || 'Analysis'}</h2>
       {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+    </div>
+  )
+}
+
+// InlineHeader - Compact inline header
+function InlineHeader({ title, subtitle, iconName }: { title?: string; subtitle?: string; iconName?: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-3">
+      {iconName && (
+        <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+          {renderIcon(iconName, 'w-4 h-4')}
+        </div>
+      )}
+      <div>
+        <h3 className="font-semibold text-slate-800">{title}</h3>
+        {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+      </div>
     </div>
   )
 }
@@ -313,6 +389,480 @@ function Icon({ name }: { name?: string }) {
   return renderIcon(name, 'w-5 h-5 text-slate-600')
 }
 
+// ==========================================
+// NEW INTERACTIVE COMPONENTS FOR AI-NATIVE UI
+// ==========================================
+
+// Action Button - AI can generate clickable buttons
+function ActionButton({ 
+  label, 
+  action, 
+  variant = 'primary',
+  iconName,
+  data
+}: { 
+  label: string
+  action: 'scan-barcode' | 'scan-ingredients' | 'ask-question' | 'compare' | 'view-history' | 'external-link'
+  variant?: 'primary' | 'secondary' | 'ghost'
+  iconName?: string
+  data?: any
+}) {
+  const handlers = useActionHandlers()
+  
+  const handleClick = () => {
+    switch (action) {
+      case 'scan-barcode':
+        handlers.onScanBarcode?.()
+        break
+      case 'scan-ingredients':
+        handlers.onScanIngredients?.()
+        break
+      case 'ask-question':
+        handlers.onAskQuestion?.(data?.question || label)
+        break
+      case 'compare':
+        handlers.onCompareProducts?.(data?.barcodes || [])
+        break
+      case 'view-history':
+        handlers.onViewHistory?.()
+        break
+      case 'external-link':
+        if (data?.url) window.open(data.url, '_blank')
+        break
+    }
+  }
+  
+  const baseStyles = "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm"
+  const variants = {
+    primary: "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 hover:-translate-y-0.5",
+    secondary: "bg-white border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700 shadow-sm",
+    ghost: "text-emerald-600 hover:bg-emerald-50"
+  }
+  
+  return (
+    <button onClick={handleClick} className={`${baseStyles} ${variants[variant]}`}>
+      {iconName && renderIcon(iconName, 'w-4 h-4')}
+      {label}
+      <ArrowRight className="w-4 h-4 opacity-60" />
+    </button>
+  )
+}
+
+// Suggestion Chips - AI can suggest follow-up questions
+function SuggestionChips({ suggestions }: { suggestions: Array<{ text: string; query?: string }> }) {
+  const handlers = useActionHandlers()
+  
+  if (!suggestions || suggestions.length === 0) return null
+  
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100">
+      <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+        <Sparkles className="w-3 h-3" /> Follow-up questions
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((suggestion, i) => (
+          <button
+            key={i}
+            onClick={() => handlers.onAskQuestion?.(suggestion.query || suggestion.text)}
+            className="px-3 py-1.5 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-sm text-slate-600 hover:text-emerald-700 transition-all"
+          >
+            {suggestion.text}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Quick Actions Row - AI can provide action buttons row
+function QuickActions({ actions }: { actions: Array<{ label: string; action: string; iconName?: string; variant?: string; data?: any }> }) {
+  if (!actions || actions.length === 0) return null
+  
+  return (
+    <div className="flex flex-wrap gap-2 my-4">
+      {actions.map((action, i) => (
+        <ActionButton 
+          key={i} 
+          label={action.label} 
+          action={action.action as any} 
+          iconName={action.iconName}
+          variant={(action.variant as any) || 'secondary'}
+          data={action.data}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Hero Section - AI can generate dynamic hero content
+function HeroSection({ 
+  title, 
+  subtitle, 
+  badge,
+  actions 
+}: { 
+  title: string
+  subtitle?: string
+  badge?: string
+  actions?: Array<{ label: string; action: string; iconName?: string; variant?: string }>
+}) {
+  return (
+    <div className="text-center py-6">
+      {badge && (
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 text-sm font-medium mb-4">
+          <Sparkles className="w-4 h-4" />
+          {badge}
+        </div>
+      )}
+      <h2 className="text-2xl md:text-3xl font-bold text-slate-800 mb-3">
+        {title}
+      </h2>
+      {subtitle && (
+        <p className="text-slate-600 text-lg max-w-xl mx-auto mb-6">
+          {subtitle}
+        </p>
+      )}
+      {actions && actions.length > 0 && (
+        <QuickActions actions={actions} />
+      )}
+    </div>
+  )
+}
+
+// Welcome Card - AI-generated personalized welcome
+function WelcomeCard({ 
+  greeting, 
+  message,
+  userName,
+  suggestions 
+}: { 
+  greeting?: string
+  message?: string
+  userName?: string
+  suggestions?: Array<{ text: string; query?: string }>
+}) {
+  const handlers = useActionHandlers()
+  
+  return (
+    <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-xl shadow-emerald-500/20">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold mb-1">
+            {greeting || 'Hello'}{userName ? `, ${userName}` : ''}! 👋
+          </h2>
+          <p className="text-emerald-100 text-sm">
+            {message || "What would you like to know about your food today?"}
+          </p>
+        </div>
+        <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+          <Leaf className="w-6 h-6" />
+        </div>
+      </div>
+      
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button
+          onClick={() => handlers.onScanBarcode?.()}
+          className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-medium transition-all"
+        >
+          <ScanBarcode className="w-4 h-4" />
+          Scan Barcode
+        </button>
+        <button
+          onClick={() => handlers.onScanIngredients?.()}
+          className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-medium transition-all"
+        >
+          <Camera className="w-4 h-4" />
+          Scan Ingredients
+        </button>
+      </div>
+      
+      {suggestions && suggestions.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-white/20">
+          <p className="text-xs text-emerald-100 mb-2">Quick questions</p>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => handlers.onAskQuestion?.(s.query || s.text)}
+                className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs transition-all"
+              >
+                {s.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Product Summary Card - Compact product info
+function ProductSummary({ 
+  name, 
+  brand, 
+  nutriScore, 
+  novaGroup,
+  imageUrl,
+  verdict,
+  verdictType
+}: { 
+  name: string
+  brand?: string
+  nutriScore?: string
+  novaGroup?: number
+  imageUrl?: string
+  verdict?: string
+  verdictType?: 'good' | 'warning' | 'bad'
+}) {
+  const getNutriColor = (score: string) => {
+    const colors: Record<string, string> = { a: 'bg-green-500', b: 'bg-lime-500', c: 'bg-yellow-500', d: 'bg-orange-500', e: 'bg-red-500' }
+    return colors[score?.toLowerCase()] || 'bg-slate-400'
+  }
+  
+  const getNovaColor = (nova: number) => {
+    const colors: Record<number, string> = { 1: 'bg-green-500', 2: 'bg-lime-500', 3: 'bg-yellow-500', 4: 'bg-red-500' }
+    return colors[nova] || 'bg-slate-400'
+  }
+  
+  const verdictStyles = {
+    good: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    warning: 'bg-amber-50 border-amber-200 text-amber-700',
+    bad: 'bg-red-50 border-red-200 text-red-700'
+  }
+  
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div className="flex gap-4">
+        {imageUrl && (
+          <div className="w-20 h-20 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
+            <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-slate-800 truncate">{name}</h3>
+          {brand && <p className="text-sm text-slate-500">{brand}</p>}
+          <div className="flex items-center gap-2 mt-2">
+            {nutriScore && (
+              <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNutriColor(nutriScore)}`}>
+                {nutriScore.toUpperCase()}
+              </span>
+            )}
+            {novaGroup && (
+              <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNovaColor(novaGroup)}`}>
+                NOVA {novaGroup}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      {verdict && (
+        <div className={`mt-3 px-3 py-2 rounded-lg border text-sm ${verdictStyles[verdictType || 'warning']}`}>
+          {verdict}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Feedback Row - Let users react to AI response
+function FeedbackRow({ messageId }: { messageId?: string }) {
+  const handlers = useActionHandlers()
+  const [feedback, setFeedback] = React.useState<'positive' | 'negative' | null>(null)
+  
+  const handleFeedback = (type: 'positive' | 'negative') => {
+    setFeedback(type)
+    handlers.onFeedback?.(type, messageId)
+  }
+  
+  return (
+    <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
+      <span className="text-xs text-slate-400">Was this helpful?</span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleFeedback('positive')}
+          className={`p-2 rounded-lg transition-all ${
+            feedback === 'positive' 
+              ? 'bg-emerald-100 text-emerald-600' 
+              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+          }`}
+        >
+          <ThumbsUp className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => handleFeedback('negative')}
+          className={`p-2 rounded-lg transition-all ${
+            feedback === 'negative' 
+              ? 'bg-red-100 text-red-600' 
+              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+          }`}
+        >
+          <ThumbsDown className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ==========================================
+// NATIVE THESYS SDK COMPONENTS
+// ==========================================
+
+// Button - Native Thesys button component
+function Button({ 
+  children, 
+  name, 
+  variant = 'primary',
+  iconLeft,
+  action 
+}: { 
+  children?: string
+  name?: string
+  variant?: 'primary' | 'secondary' | 'ghost' | 'outline'
+  iconLeft?: ThesysComponent
+  action?: { type: string; props?: any }
+}) {
+  const handlers = useActionHandlers()
+  
+  const handleClick = () => {
+    const buttonText = (children || '').toLowerCase()
+    const buttonName = (name || '').toLowerCase()
+    
+    // Check for scan-related actions
+    const isScanBarcode = 
+      buttonName.includes('barcode') || 
+      buttonName.includes('scan') ||
+      buttonText.includes('scan') ||
+      buttonText.includes('barcode') ||
+      action?.type === 'scan-barcode'
+    
+    const isScanIngredients = 
+      buttonName.includes('ingredient') ||
+      buttonText.includes('ingredient') ||
+      action?.type === 'scan-ingredients'
+    
+    const isLearnMore = 
+      buttonText.includes('learn') ||
+      buttonText.includes('more') ||
+      buttonText.includes('info')
+    
+    if (isScanIngredients) {
+      handlers.onScanIngredients?.()
+    } else if (isScanBarcode) {
+      handlers.onScanBarcode?.()
+    } else if (isLearnMore) {
+      // For learn more, ask a follow-up question
+      handlers.onAskQuestion?.('Tell me more about this')
+    } else if (action?.type === 'continue_conversation') {
+      // Generic continue conversation - use button text as query
+      handlers.onAskQuestion?.(children || 'Tell me more')
+    } else if (action?.props?.query) {
+      // If action has a query prop, use it
+      handlers.onAskQuestion?.(action.props.query)
+    } else {
+      // Fallback: use button text as question
+      handlers.onAskQuestion?.(children || name || 'Tell me more')
+    }
+  }
+  
+  const baseStyles = "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm cursor-pointer"
+  const variants: Record<string, string> = {
+    primary: "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 hover:-translate-y-0.5",
+    secondary: "bg-white border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700 shadow-sm",
+    ghost: "text-emerald-600 hover:bg-emerald-50",
+    outline: "border border-slate-300 text-slate-700 hover:border-emerald-400 hover:text-emerald-600"
+  }
+  
+  return (
+    <button onClick={handleClick} className={`${baseStyles} ${variants[variant] || variants.primary}`}>
+      {iconLeft && renderThesysComponent(iconLeft)}
+      {children}
+    </button>
+  )
+}
+
+// ButtonGroup - Container for multiple buttons
+function ButtonGroup({ 
+  variant = 'horizontal', 
+  children 
+}: { 
+  variant?: 'horizontal' | 'vertical'
+  children?: ThesysComponent[]
+}) {
+  if (!children || children.length === 0) return null
+  
+  const layoutClass = variant === 'vertical' 
+    ? 'flex flex-col gap-2' 
+    : 'flex flex-wrap gap-2'
+  
+  return (
+    <div className={`${layoutClass} my-4`}>
+      {children.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// FollowUpBlock - Native Thesys follow-up suggestions
+function FollowUpBlock({ followUpText }: { followUpText?: string[] }) {
+  const handlers = useActionHandlers()
+  
+  if (!followUpText || followUpText.length === 0) return null
+  
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100">
+      <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+        <Sparkles className="w-3 h-3" /> Suggestions
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {followUpText.map((text, i) => (
+          <button
+            key={i}
+            onClick={() => handlers.onAskQuestion?.(text)}
+            className="px-3 py-1.5 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-sm text-slate-600 hover:text-emerald-700 transition-all"
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ChipGroup - Group of selectable chips
+function ChipGroup({ children }: { children?: ThesysComponent[] }) {
+  if (!children || children.length === 0) return null
+  
+  return (
+    <div className="flex flex-wrap gap-2 my-3">
+      {children.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// Chip - Individual selectable chip
+function Chip({ label, selected, onClick }: { label?: string; selected?: boolean; onClick?: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+        selected 
+          ? 'bg-emerald-500 text-white' 
+          : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+// Divider - Visual separator
+function Divider() {
+  return <hr className="my-4 border-slate-200" />
+}
+
 // Main renderer function
 function renderThesysComponent(component: ThesysComponent): React.ReactNode {
   const { component: type, props } = component
@@ -322,6 +872,8 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <Card {...props} />
     case 'Header':
       return <Header {...props} />
+    case 'InlineHeader':
+      return <InlineHeader {...props} />
     case 'DataTile':
       return <DataTile {...props} />
     case 'MiniCard':
@@ -340,6 +892,34 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <SectionBlock {...props} />
     case 'Icon':
       return <Icon {...props} />
+    // NEW INTERACTIVE COMPONENTS
+    case 'ActionButton':
+      return <ActionButton label={props.label || ''} action={props.action || 'ask-question'} {...props} />
+    case 'SuggestionChips':
+      return <SuggestionChips suggestions={props.suggestions || []} />
+    case 'QuickActions':
+      return <QuickActions actions={props.actions || []} />
+    case 'HeroSection':
+      return <HeroSection title={props.title || ''} {...props} />
+    case 'WelcomeCard':
+      return <WelcomeCard {...props} />
+    case 'ProductSummary':
+      return <ProductSummary name={props.name || 'Unknown Product'} {...props} />
+    case 'FeedbackRow':
+      return <FeedbackRow {...props} />
+    // NATIVE THESYS SDK COMPONENTS
+    case 'Button':
+      return <Button {...props} />
+    case 'ButtonGroup':
+      return <ButtonGroup {...props} />
+    case 'FollowUpBlock':
+      return <FollowUpBlock {...props} />
+    case 'ChipGroup':
+      return <ChipGroup {...props} />
+    case 'Chip':
+      return <Chip {...props} />
+    case 'Divider':
+      return <Divider />
     default:
       console.warn(`Unknown Thesys component: ${type}`)
       return <div className="text-red-500">Unknown component: {type}</div>
@@ -348,11 +928,21 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
 
 // Export the main component
 export function ThesysUIRenderer({ response }: { response: string }) {
+  // Handle empty or invalid response
+  if (!response || typeof response !== 'string' || response.trim() === '') {
+    return (
+      <div className="text-slate-500 italic">
+        No content to display
+      </div>
+    )
+  }
+  
   // Try to parse as Thesys JSON response
   try {
     let jsonStr = response.trim()
     
     // Handle <content thesys="true"> wrapper from Thesys C1
+    // First, try to find the FIRST complete content block
     const contentMatch = jsonStr.match(/<content\s+thesys="true">\s*([\s\S]*?)\s*<\/content>/i)
     if (contentMatch) {
       jsonStr = contentMatch[1]
@@ -364,7 +954,22 @@ export function ThesysUIRenderer({ response }: { response: string }) {
         // Remove closing tag if present
         jsonStr = jsonStr.replace(/<\/content>$/i, '')
       }
+    } else if (jsonStr.includes('<content')) {
+      // Content tag might be somewhere in the middle - extract first one
+      const startMatch = jsonStr.match(/<content\s+thesys="true">/i)
+      if (startMatch && startMatch.index !== undefined) {
+        const startIdx = startMatch.index + startMatch[0].length
+        const endIdx = jsonStr.indexOf('</content>', startIdx)
+        if (endIdx !== -1) {
+          jsonStr = jsonStr.slice(startIdx, endIdx)
+        } else {
+          jsonStr = jsonStr.slice(startIdx)
+        }
+      }
     }
+    
+    // Remove any remaining content tags (in case of duplicates)
+    jsonStr = jsonStr.replace(/<\/?content[^>]*>/gi, '')
     
     // Unescape HTML entities
     jsonStr = jsonStr
@@ -386,6 +991,27 @@ export function ThesysUIRenderer({ response }: { response: string }) {
         jsonStr = jsonStr.slice(4).trim()
       }
     }
+    
+    // Find the first valid JSON object in the string
+    const jsonStartIdx = jsonStr.indexOf('{')
+    if (jsonStartIdx > 0) {
+      jsonStr = jsonStr.slice(jsonStartIdx)
+    }
+    
+    // Find matching closing brace for the first object
+    let braceCount = 0
+    let jsonEndIdx = -1
+    for (let i = 0; i < jsonStr.length; i++) {
+      if (jsonStr[i] === '{') braceCount++
+      if (jsonStr[i] === '}') braceCount--
+      if (braceCount === 0 && jsonStr[i] === '}') {
+        jsonEndIdx = i + 1
+        break
+      }
+    }
+    if (jsonEndIdx > 0) {
+      jsonStr = jsonStr.slice(0, jsonEndIdx)
+    }
 
     // Check if it's valid JSON with component structure
     if (jsonStr.includes('"component"') && jsonStr.includes('"props"')) {
@@ -396,7 +1022,7 @@ export function ThesysUIRenderer({ response }: { response: string }) {
       
       if (rootComponent && rootComponent.component) {
         return (
-          <div className="thesys-ui">
+          <div className="thesys-ui p-1">
             {renderThesysComponent(rootComponent)}
           </div>
         )
@@ -475,3 +1101,4 @@ function MarkdownRenderer({ content }: { content: string }) {
 }
 
 export default ThesysUIRenderer
+export { ActionProvider }

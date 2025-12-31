@@ -17,10 +17,13 @@ import {
   LogOut,
   Settings,
   History,
-  Scale
+  Scale,
+  Plus,
+  X,
+  ChevronUp
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import ThesysUIRenderer from '@/components/ThesysUI'
+import ThesysUIRenderer, { ActionProvider } from '@/components/ThesysUI'
 import { useAuth } from '@/components/AuthProvider'
 import AuthModal from '@/components/AuthModal'
 import UserPreferences from '@/components/UserPreferences'
@@ -60,8 +63,8 @@ function GenerativeContent({ content, isStreaming }: { content: string; isStream
           </div>
         </div>
         <div className="text-center">
-          <p className="text-slate-700 font-medium">Generating Generative UI...</p>
-          <p className="text-sm text-slate-500 mt-1">Analyzing with Thesys C1</p>
+          <p className="text-slate-700 font-medium">Generating UI...</p>
+          <p className="text-sm text-slate-500 mt-1">Thesys C1 is thinking</p>
         </div>
         <div className="flex gap-1">
           <span className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -79,6 +82,56 @@ function GenerativeContent({ content, isStreaming }: { content: string; isStream
   )
 }
 
+// Floating Action Button component
+function FloatingActions({ 
+  onScanBarcode, 
+  onScanIngredients,
+  isExpanded,
+  onToggle 
+}: { 
+  onScanBarcode: () => void
+  onScanIngredients: () => void
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="fixed bottom-24 right-4 z-30 flex flex-col items-end gap-2">
+      {/* Expanded options */}
+      {isExpanded && (
+        <>
+          <button
+            onClick={onScanBarcode}
+            className="flex items-center gap-2 px-4 py-3 bg-white rounded-xl shadow-lg border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700 transition-all animate-fade-in-up"
+          >
+            <ScanBarcode className="w-5 h-5" />
+            <span className="text-sm font-medium">Scan Barcode</span>
+          </button>
+          <button
+            onClick={onScanIngredients}
+            className="flex items-center gap-2 px-4 py-3 bg-white rounded-xl shadow-lg border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700 transition-all animate-fade-in-up"
+            style={{ animationDelay: '50ms' }}
+          >
+            <Camera className="w-5 h-5" />
+            <span className="text-sm font-medium">Scan Ingredients</span>
+          </button>
+        </>
+      )}
+      
+      {/* Main FAB */}
+      <button
+        onClick={onToggle}
+        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
+          isExpanded 
+            ? 'bg-slate-800 text-white rotate-45' 
+            : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white hover:shadow-emerald-500/30'
+        }`}
+      >
+        {isExpanded ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+      </button>
+    </div>
+  )
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -92,6 +145,8 @@ export default function Home() {
   const [showComparison, setShowComparison] = useState(false)
   const [comparisonItems, setComparisonItems] = useState<ScanHistoryItem[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [fabExpanded, setFabExpanded] = useState(false)
+  const [welcomeGenerated, setWelcomeGenerated] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   
@@ -105,7 +160,115 @@ export default function Home() {
     scrollToBottom()
   }, [messages, streamingContent, scrollToBottom])
 
+  // Generate AI welcome message on first load
+  useEffect(() => {
+    if (!welcomeGenerated && !authLoading && messages.length === 0) {
+      generateWelcomeMessage()
+      setWelcomeGenerated(true)
+    }
+  }, [authLoading, welcomeGenerated, messages.length])
+
   const generateId = () => Math.random().toString(36).substring(2, 9)
+
+  // Generate personalized welcome UI from AI
+  const generateWelcomeMessage = async () => {
+    setIsLoading(true)
+    setStreamingContent('')
+
+    try {
+      const contextInfo = {
+        isLoggedIn: !!user,
+        userName: profile?.display_name || user?.email?.split('@')[0],
+        dietaryRestrictions: profile?.dietary_restrictions || [],
+        allergens: profile?.allergens || [],
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Generate a welcome UI for the user. Context: ${JSON.stringify(contextInfo)}. 
+          Create an engaging, personalized welcome that encourages them to scan a product or ask questions.
+          Use WelcomeCard component for the hero, include SuggestionChips for quick questions.`,
+          history: [],
+          isWelcome: true
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to get welcome')
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          
+          const chunk = decoder.decode(value, { stream: true })
+          accumulated += chunk
+          setStreamingContent(accumulated)
+        }
+      }
+
+      const welcomeMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: accumulated
+      }
+      setMessages([welcomeMessage])
+      setStreamingContent('')
+
+    } catch (error) {
+      console.error('Welcome error:', error)
+      // Fallback to static welcome if AI fails
+      const fallbackWelcome: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: JSON.stringify({
+          component: {
+            component: 'Card',
+            props: {
+              children: [
+                {
+                  component: 'WelcomeCard',
+                  props: {
+                    greeting: profile?.display_name ? `Hey ${profile.display_name}` : 'Welcome',
+                    message: "I'm your AI food copilot. Scan a barcode or ask me anything about ingredients!",
+                    suggestions: [
+                      { text: "What's maltodextrin?", query: "What's maltodextrin and is it safe?" },
+                      { text: "Is palm oil bad?", query: "Is palm oil bad for health?" },
+                      { text: "Explain E621", query: "What is E621 additive?" }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          error: null
+        })
+      }
+      setMessages([fallbackWelcome])
+      setStreamingContent('')
+    }
+
+    setIsLoading(false)
+  }
+
+  // Action handlers for interactive components
+  const actionHandlers = {
+    onScanBarcode: () => setShowBarcodeScanner(true),
+    onScanIngredients: () => setShowIngredientScanner(true),
+    onAskQuestion: (question: string) => streamChat(question),
+    onViewHistory: () => setShowHistory(true),
+    onCompareProducts: (barcodes: string[]) => console.log('Compare:', barcodes),
+    onFeedback: (type: 'positive' | 'negative', messageId?: string) => {
+      console.log('Feedback:', type, messageId)
+      // Could send to analytics or backend
+    }
+  }
 
   // Stream chat response from Thesys C1 API
   const streamChat = async (message: string, productContext?: any) => {
@@ -299,6 +462,7 @@ export default function Home() {
   const clearChat = () => {
     setMessages([])
     setStreamingContent('')
+    setWelcomeGenerated(false) // Reset so welcome regenerates
   }
 
   const getNutriScoreColor = (score: string): string => {
@@ -323,18 +487,19 @@ export default function Home() {
   }
 
   return (
+    <ActionProvider handlers={actionHandlers}>
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50">
-      {/* Header */}
+      {/* Minimal Header */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/70 border-b border-emerald-100/50">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                 <Leaf className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="font-bold text-lg text-slate-800">Food Co-Pilot</h1>
-                <p className="text-xs text-slate-500">Thesys C1 • Generative UI</p>
+                <h1 className="font-bold text-base text-slate-800">Food Co-Pilot</h1>
+                <p className="text-xs text-slate-400">AI-Native • Generative UI</p>
               </div>
             </div>
             
@@ -351,11 +516,11 @@ export default function Home() {
               )}
 
               {/* Clear Chat */}
-              {messages.length > 0 && (
+              {messages.length > 1 && (
                 <button
                   onClick={clearChat}
                   className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="Clear chat"
+                  title="New conversation"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -373,9 +538,6 @@ export default function Home() {
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
                       {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
                     </div>
-                    <span className="text-sm font-medium text-slate-700 hidden sm:block max-w-[100px] truncate">
-                      {profile?.display_name || user.email?.split('@')[0]}
-                    </span>
                   </button>
 
                   {/* Dropdown Menu */}
@@ -400,11 +562,6 @@ export default function Home() {
                         >
                           <Settings className="w-4 h-4" />
                           Preferences
-                          {(profile?.dietary_restrictions?.length || 0) + (profile?.allergens?.length || 0) > 0 && (
-                            <span className="ml-auto text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                              {(profile?.dietary_restrictions?.length || 0) + (profile?.allergens?.length || 0)}
-                            </span>
-                          )}
                         </button>
                         <button
                           onClick={() => { setShowHistory(true); setShowUserMenu(false) }}
@@ -431,7 +588,6 @@ export default function Home() {
                   className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2"
                 >
                   <User className="w-4 h-4" />
-                  <span className="hidden sm:inline">Sign In</span>
                 </button>
               )}
             </div>
@@ -439,101 +595,9 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Content - Pure Conversational UI */}
       <main className="max-w-4xl mx-auto px-4 pb-32">
-        {/* Hero Section - Show when no messages */}
-        {messages.length === 0 && !streamingContent && (
-          <div className="pt-16 pb-8 text-center fade-in">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 text-sm font-medium mb-6">
-              <Sparkles className="w-4 h-4" />
-              Powered by Thesys C1
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold text-slate-800 mb-4">
-              Understand what you're{' '}
-              <span className="bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">
-                really eating
-              </span>
-            </h2>
-            <p className="text-slate-600 text-lg max-w-xl mx-auto mb-8">
-              Scan a barcode or ingredient list and get instant, intelligent AI analysis. 
-              No jargon, just clear answers with beautiful Generative UI.
-            </p>
-
-            {/* Personalization Badge */}
-            {user && profile && (profile.dietary_restrictions.length > 0 || profile.allergens.length > 0) && (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm mb-6">
-                <CheckCircle className="w-4 h-4" />
-                <span>
-                  Personalized for: {[...profile.dietary_restrictions, ...profile.allergens].slice(0, 3).join(', ')}
-                  {(profile.dietary_restrictions.length + profile.allergens.length) > 3 && ' +more'}
-                </span>
-                <button 
-                  onClick={() => setShowPreferences(true)}
-                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
-                >
-                  Edit
-                </button>
-              </div>
-            )}
-
-            {/* Sign In Prompt for non-users */}
-            {!user && (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm mb-6">
-                <Info className="w-4 h-4" />
-                <span>Sign in to save history, preferences & compare products</span>
-                <button 
-                  onClick={() => setShowAuthModal(true)}
-                  className="ml-2 text-amber-600 hover:text-amber-800 underline font-medium"
-                >
-                  Sign In
-                </button>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <button
-                onClick={() => setShowBarcodeScanner(true)}
-                className="group flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl font-medium shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 hover:-translate-y-0.5 transition-all"
-              >
-                <ScanBarcode className="w-5 h-5" />
-                Scan Barcode
-                <span className="text-emerald-200 text-sm">→</span>
-              </button>
-              <button
-                onClick={() => setShowIngredientScanner(true)}
-                className="group flex items-center justify-center gap-3 px-6 py-4 bg-white text-slate-700 rounded-2xl font-medium shadow-lg border border-slate-200 hover:shadow-xl hover:border-emerald-200 hover:-translate-y-0.5 transition-all"
-              >
-                <Camera className="w-5 h-5" />
-                Scan Ingredients
-                <span className="text-slate-400 text-sm">→</span>
-              </button>
-            </div>
-
-            {/* Quick prompts */}
-            <div className="space-y-3">
-              <p className="text-sm text-slate-500">Or try asking:</p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {[
-                  "What's maltodextrin?",
-                  "Is palm oil bad?",
-                  "Explain E621",
-                  "NOVA 4 meaning?"
-                ].map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => streamChat(prompt)}
-                    className="px-4 py-2 bg-white/80 backdrop-blur border border-slate-200 rounded-xl text-sm text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition-colors"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
+        {/* Messages - ALL content is AI-generated */}
         <div className="py-6 space-y-6">
           {messages.map((message) => (
             <div
@@ -561,31 +625,25 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {message.productContext.nutriScore && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-slate-500">NutriScore</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
-                              getNutriScoreColor(message.productContext.nutriScore)
-                            }`}>
-                              {message.productContext.nutriScore.toUpperCase()}
-                            </span>
-                          </div>
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
+                            getNutriScoreColor(message.productContext.nutriScore)
+                          }`}>
+                            {message.productContext.nutriScore.toUpperCase()}
+                          </span>
                         )}
                         {message.productContext.novaGroup && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-slate-500">NOVA</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
-                              getNovaGroupInfo(message.productContext.novaGroup).color
-                            }`}>
-                              {message.productContext.novaGroup}
-                            </span>
-                          </div>
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
+                            getNovaGroupInfo(message.productContext.novaGroup).color
+                          }`}>
+                            NOVA {message.productContext.novaGroup}
+                          </span>
                         )}
                       </div>
                     </div>
                   )}
                   
                   {/* AI Response - Generative Content */}
-                  <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden p-5">
+                  <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
                     <GenerativeContent content={message.content} />
                   </div>
                 </div>
@@ -596,7 +654,7 @@ export default function Home() {
           {/* Streaming Content */}
           {streamingContent && (
             <div className="fade-in space-y-3">
-              <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden p-5">
+              <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
                 <GenerativeContent content={streamingContent} isStreaming={true} />
               </div>
             </div>
@@ -616,29 +674,19 @@ export default function Home() {
         </div>
       </main>
 
+      {/* Floating Action Button */}
+      <FloatingActions
+        onScanBarcode={() => { setFabExpanded(false); setShowBarcodeScanner(true) }}
+        onScanIngredients={() => { setFabExpanded(false); setShowIngredientScanner(true) }}
+        isExpanded={fabExpanded}
+        onToggle={() => setFabExpanded(!fabExpanded)}
+      />
+
       {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-8 pb-6">
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-4">
         <div className="max-w-4xl mx-auto px-4">
           <form onSubmit={handleSubmit} className="relative">
             <div className="flex gap-2">
-              {/* Scan Buttons */}
-              <button
-                type="button"
-                onClick={() => setShowBarcodeScanner(true)}
-                className="p-3 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm"
-                title="Scan barcode"
-              >
-                <ScanBarcode className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowIngredientScanner(true)}
-                className="p-3 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm"
-                title="Scan ingredients"
-              >
-                <ImageIcon className="w-5 h-5" />
-              </button>
-
               {/* Input Field */}
               <div className="flex-1 relative">
                 <input
@@ -646,23 +694,20 @@ export default function Home() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about a food or paste a barcode..."
-                  className="w-full px-5 py-3 pr-12 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all shadow-sm"
+                  placeholder="Ask about any food, ingredient, or paste a barcode..."
+                  className="w-full px-5 py-3.5 pr-12 bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all shadow-lg"
                   disabled={isLoading}
                 />
                 <button
                   type="submit"
                   disabled={isLoading || !input.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-600 transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg transition-all"
                 >
                   <Send className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </form>
-          <p className="text-center text-xs text-slate-400 mt-3">
-            Powered by Thesys C1 Generative UI • Data from Open Food Facts
-          </p>
         </div>
       </div>
 
@@ -715,5 +760,6 @@ export default function Home() {
         items={comparisonItems}
       />
     </div>
+    </ActionProvider>
   )
 }

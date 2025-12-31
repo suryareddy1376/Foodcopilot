@@ -236,18 +236,34 @@ export async function updateUserProfile(
 
 // Get user's scan history
 export async function getScanHistory(userId: string, limit = 50): Promise<ScanHistoryItem[]> {
-  const { data, error } = await supabase
-    .from('scan_history')
-    .select('*')
-    .eq('user_id', userId)
-    .order('scanned_at', { ascending: false })
-    .limit(limit)
+  console.log('getScanHistory called for user:', userId)
+  
+  try {
+    // Add timeout to prevent infinite loading
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Request timeout')), 10000)
+    })
+    
+    const queryPromise = supabase
+      .from('scan_history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('scanned_at', { ascending: false })
+      .limit(limit)
+    
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as any
 
-  if (error) {
-    console.error('Error fetching scan history:', error)
+    if (error) {
+      console.error('Error fetching scan history:', error.message, error.code)
+      return []
+    }
+    
+    console.log('getScanHistory returned:', data?.length || 0, 'items')
+    return data || []
+  } catch (err: any) {
+    console.error('getScanHistory exception:', err.message)
     return []
   }
-  return data || []
 }
 
 // Add to scan history
@@ -257,61 +273,93 @@ export async function addToScanHistory(
 ): Promise<ScanHistoryItem | null> {
   console.log('addToScanHistory called with userId:', userId, 'barcode:', item.barcode)
   
-  // Verify we have an active session
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) {
-    console.error('No active session - cannot save to history')
+  try {
+    // Verify we have an active session and refresh if needed
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError.message)
+      return null
+    }
+    
+    if (!session) {
+      console.error('No active session - cannot save to history')
+      // Try to refresh the session
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError || !refreshData.session) {
+        console.error('Failed to refresh session:', refreshError?.message)
+        return null
+      }
+      console.log('Session refreshed successfully')
+    }
+    
+    // Verify user ID matches session
+    const currentUserId = session?.user?.id
+    if (currentUserId && currentUserId !== userId) {
+      console.warn('User ID mismatch - using session user ID')
+      userId = currentUserId
+    }
+    
+    console.log('Session verified, user:', userId)
+
+    // Check if this barcode was recently scanned (within last 5 minutes) to avoid duplicates
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    const { data: existing, error: checkError } = await supabase
+      .from('scan_history')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('barcode', item.barcode)
+      .gte('scanned_at', fiveMinutesAgo)
+      .limit(1)
+
+    if (checkError) {
+      console.error('Error checking for duplicates:', checkError.message, checkError.code, checkError.hint)
+      // Continue anyway - better to have a duplicate than no record
+    }
+
+    if (existing && existing.length > 0) {
+      console.log('Skipping duplicate scan within 5 minutes')
+      return existing[0] as unknown as ScanHistoryItem
+    }
+
+    console.log('Inserting scan history record...')
+    const { data, error } = await supabase
+      .from('scan_history')
+      .insert({
+        user_id: userId,
+        barcode: item.barcode,
+        product_name: item.product_name || null,
+        brand: item.brand || null,
+        nova_group: item.nova_group || null,
+        nutri_score: item.nutri_score || null,
+        product_id: item.product_id || null,
+        is_favorite: false
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error adding to scan history:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      // If RLS policy error, try to provide more context
+      if (error.code === '42501' || error.message.includes('policy')) {
+        console.error('RLS Policy violation - ensure the scan_history table has proper INSERT policy for authenticated users')
+      }
+      
+      return null
+    }
+    
+    console.log('✅ Successfully saved to scan history:', data?.id)
+    return data
+  } catch (err) {
+    console.error('Unexpected error in addToScanHistory:', err)
     return null
   }
-  console.log('Session verified, user:', session.user.id)
-
-  // Check if this barcode was recently scanned (within last 5 minutes) to avoid duplicates
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-  const { data: existing, error: checkError } = await supabase
-    .from('scan_history')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('barcode', item.barcode)
-    .gte('scanned_at', fiveMinutesAgo)
-    .limit(1)
-
-  if (checkError) {
-    console.error('Error checking for duplicates:', checkError.message, checkError.code, checkError.hint)
-  }
-
-  if (existing && existing.length > 0) {
-    console.log('Skipping duplicate scan within 5 minutes')
-    return null
-  }
-
-  console.log('Inserting scan history record...')
-  const { data, error } = await supabase
-    .from('scan_history')
-    .insert({
-      user_id: userId,
-      barcode: item.barcode,
-      product_name: item.product_name,
-      brand: item.brand,
-      nova_group: item.nova_group,
-      nutri_score: item.nutri_score,
-      product_id: item.product_id,
-      is_favorite: false
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error adding to scan history:', {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint
-    })
-    return null
-  }
-  
-  console.log('✅ Successfully saved to scan history:', data?.id)
-  return data
 }
 
 // Toggle favorite status
