@@ -64,7 +64,7 @@ function GenerativeContent({ content, isStreaming }: { content: string; isStream
         </div>
         <div className="text-center">
           <p className="text-slate-700 font-medium">Generating UI...</p>
-          <p className="text-sm text-slate-500 mt-1">Thesys C1 is thinking</p>
+          <p className="text-sm text-slate-500 mt-1">AI is thinking</p>
         </div>
         <div className="flex gap-1">
           <span className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />

@@ -215,6 +215,67 @@ function MiniCardBlock({ children }: { children?: ThesysComponent[] }) {
   )
 }
 
+// ProfileTile - Display profile/summary info with icon and details
+function ProfileTile({ 
+  title, 
+  subtitle, 
+  description, 
+  icon, 
+  image,
+  badge,
+  children 
+}: { 
+  title?: string
+  subtitle?: string
+  description?: string
+  icon?: ThesysComponent
+  image?: string
+  badge?: string
+  children?: ThesysComponent[]
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div className="flex items-start gap-4">
+        {/* Icon or Image */}
+        {(icon || image) && (
+          <div className="flex-shrink-0">
+            {image ? (
+              <img src={image} alt={title || ''} className="w-12 h-12 rounded-lg object-cover" />
+            ) : icon ? (
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
+                {renderThesysComponent(icon)}
+              </div>
+            ) : null}
+          </div>
+        )}
+        
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            {title && <h4 className="font-semibold text-slate-800 truncate">{title}</h4>}
+            {badge && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
+                {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="text-sm text-slate-600 mt-0.5">{subtitle}</p>}
+          {description && <p className="text-sm text-slate-500 mt-1">{description}</p>}
+        </div>
+      </div>
+      
+      {/* Children */}
+      {children && children.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          {children.map((child, i) => (
+            <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TextContent({ textMarkdown }: { textMarkdown?: string }) {
   if (!textMarkdown) return null
   // Simple markdown-like rendering
@@ -880,6 +941,8 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <MiniCard {...props} />
     case 'MiniCardBlock':
       return <MiniCardBlock {...props} />
+    case 'ProfileTile':
+      return <ProfileTile {...props} />
     case 'TextContent':
       return <TextContent {...props} />
     case 'TagBlock':
