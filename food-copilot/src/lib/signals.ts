@@ -8,16 +8,31 @@ export interface DetectedSignal {
   evidence: string[]
 }
 
+export interface UserConflict {
+  type: 'allergen' | 'dietary'
+  severity: 'warning' | 'danger'
+  item: string
+  description: string
+  evidence: string[]
+}
+
 export interface SignalDetectionResult {
   signals: DetectedSignal[]
   flaggedAdditives: FlaggedAdditive[]
+  userConflicts: UserConflict[]
   summary: {
     isUltraProcessed: boolean
     additiveCount: number
     hasDebatedIngredients: boolean
+    hasUserConflicts: boolean
     novaGroup: number | null
     nutriScore: string | null
   }
+}
+
+export interface UserPreferences {
+  dietary_restrictions: string[]
+  allergens: string[]
 }
 
 export interface FlaggedAdditive {
@@ -109,14 +124,152 @@ function parseAdditiveCode(tag: string): string {
   return tag.replace('en:', '').toLowerCase()
 }
 
+// Allergen detection keywords
+const ALLERGEN_KEYWORDS: Record<string, string[]> = {
+  'peanuts': ['peanut', 'groundnut', 'arachis'],
+  'tree-nuts': ['almond', 'cashew', 'walnut', 'pecan', 'pistachio', 'hazelnut', 'macadamia', 'brazil nut', 'chestnut', 'pine nut'],
+  'milk': ['milk', 'dairy', 'lactose', 'casein', 'whey', 'cream', 'butter', 'cheese', 'yogurt', 'ghee'],
+  'eggs': ['egg', 'albumin', 'lysozyme', 'mayonnaise', 'meringue'],
+  'wheat': ['wheat', 'flour', 'bread', 'semolina', 'durum', 'spelt', 'kamut', 'couscous'],
+  'soy': ['soy', 'soya', 'tofu', 'tempeh', 'edamame', 'miso', 'lecithin'],
+  'fish': ['fish', 'cod', 'salmon', 'tuna', 'anchovy', 'sardine', 'mackerel', 'bass', 'trout'],
+  'shellfish': ['shrimp', 'prawn', 'crab', 'lobster', 'crayfish', 'scallop', 'mussel', 'oyster', 'clam', 'squid', 'octopus'],
+  'sesame': ['sesame', 'tahini', 'halvah'],
+  'sulfites': ['sulfite', 'sulphite', 'sulfur dioxide', 'e220', 'e221', 'e222', 'e223', 'e224', 'e225', 'e226', 'e227', 'e228'],
+  'mustard': ['mustard'],
+  'celery': ['celery', 'celeriac'],
+  'lupin': ['lupin', 'lupine'],
+  'mollusks': ['mollusk', 'mollusc', 'snail', 'escargot', 'squid', 'octopus', 'cuttlefish']
+}
+
+// Dietary restriction violations
+const DIETARY_VIOLATIONS: Record<string, { keywords: string[], description: string }> = {
+  'vegan': {
+    keywords: ['meat', 'beef', 'pork', 'chicken', 'fish', 'seafood', 'milk', 'dairy', 'egg', 'honey', 'gelatin', 'lard', 'tallow', 'whey', 'casein', 'lactose', 'anchovy', 'carmine', 'shellac', 'lanolin'],
+    description: 'Contains animal-derived ingredients'
+  },
+  'vegetarian': {
+    keywords: ['meat', 'beef', 'pork', 'chicken', 'fish', 'seafood', 'gelatin', 'lard', 'tallow', 'anchovy', 'rennet'],
+    description: 'Contains meat or fish-derived ingredients'
+  },
+  'halal': {
+    keywords: ['pork', 'lard', 'bacon', 'ham', 'gelatin', 'alcohol', 'wine', 'beer', 'rum', 'ethanol'],
+    description: 'May contain non-halal ingredients'
+  },
+  'kosher': {
+    keywords: ['pork', 'shellfish', 'shrimp', 'crab', 'lobster', 'lard'],
+    description: 'May contain non-kosher ingredients'
+  },
+  'gluten-free': {
+    keywords: ['wheat', 'barley', 'rye', 'oat', 'spelt', 'kamut', 'triticale', 'semolina', 'durum', 'malt', 'brewer'],
+    description: 'Contains gluten-containing ingredients'
+  },
+  'lactose-free': {
+    keywords: ['milk', 'lactose', 'dairy', 'cream', 'whey', 'casein', 'cheese', 'butter', 'yogurt'],
+    description: 'Contains lactose/dairy'
+  },
+  'keto': {
+    keywords: ['sugar', 'glucose', 'fructose', 'sucrose', 'maltose', 'dextrose', 'corn syrup', 'honey', 'agave', 'rice', 'wheat', 'flour', 'starch', 'potato', 'bread'],
+    description: 'Contains high-carb ingredients'
+  },
+  'paleo': {
+    keywords: ['grain', 'wheat', 'rice', 'corn', 'oat', 'legume', 'bean', 'lentil', 'peanut', 'soy', 'dairy', 'milk', 'cheese', 'sugar', 'refined'],
+    description: 'Contains non-paleo ingredients'
+  },
+  'low-sodium': {
+    keywords: ['sodium', 'salt', 'msg', 'monosodium glutamate', 'soy sauce', 'brine'],
+    description: 'May be high in sodium'
+  },
+  'low-sugar': {
+    keywords: ['sugar', 'glucose', 'fructose', 'sucrose', 'maltose', 'dextrose', 'corn syrup', 'honey', 'agave', 'molasses', 'cane'],
+    description: 'Contains added sugars'
+  }
+}
+
+// Detect user-specific conflicts
+export function detectUserConflicts(
+  ingredientsText: string | null,
+  allergensTags: string[],
+  userPreferences: UserPreferences | null
+): UserConflict[] {
+  if (!userPreferences || (!userPreferences.allergens.length && !userPreferences.dietary_restrictions.length)) {
+    return []
+  }
+
+  const conflicts: UserConflict[] = []
+  const ingredientsLower = ingredientsText?.toLowerCase() || ''
+  const allergensLower = allergensTags.map(a => a.toLowerCase().replace('en:', ''))
+
+  // Check allergens
+  for (const allergen of userPreferences.allergens) {
+    const keywords = ALLERGEN_KEYWORDS[allergen] || [allergen]
+    const foundKeywords: string[] = []
+
+    // Check in ingredients text
+    for (const keyword of keywords) {
+      if (ingredientsLower.includes(keyword)) {
+        foundKeywords.push(keyword)
+      }
+    }
+
+    // Check in allergens tags from OFF
+    for (const tag of allergensLower) {
+      for (const keyword of keywords) {
+        if (tag.includes(keyword)) {
+          foundKeywords.push(tag)
+        }
+      }
+    }
+
+    if (foundKeywords.length > 0) {
+      conflicts.push({
+        type: 'allergen',
+        severity: 'danger',
+        item: allergen,
+        description: `Contains ${allergen.replace('-', ' ')} - ALLERGEN ALERT`,
+        evidence: Array.from(new Set(foundKeywords))
+      })
+    }
+  }
+
+  // Check dietary restrictions
+  for (const restriction of userPreferences.dietary_restrictions) {
+    const violation = DIETARY_VIOLATIONS[restriction]
+    if (!violation) continue
+
+    const foundKeywords: string[] = []
+    for (const keyword of violation.keywords) {
+      if (ingredientsLower.includes(keyword)) {
+        foundKeywords.push(keyword)
+      }
+    }
+
+    if (foundKeywords.length > 0) {
+      conflicts.push({
+        type: 'dietary',
+        severity: 'warning',
+        item: restriction,
+        description: `${violation.description} (${restriction})`,
+        evidence: Array.from(new Set(foundKeywords))
+      })
+    }
+  }
+
+  return conflicts
+}
+
 export function detectSignals(
   ingredientsText: string | null,
   additivesTags: string[],
   novaGroup: number | null,
-  nutriScore: string | null
+  nutriScore: string | null,
+  userPreferences?: UserPreferences | null
 ): SignalDetectionResult {
   const signals: DetectedSignal[] = []
   const flaggedAdditives: FlaggedAdditive[] = []
+  
+  // Detect user conflicts
+  const userConflicts = detectUserConflicts(ingredientsText, [], userPreferences || null)
   
   // Parse additives
   const parsedAdditives = additivesTags.map(parseAdditiveCode)
@@ -269,10 +422,12 @@ export function detectSignals(
   return {
     signals,
     flaggedAdditives,
+    userConflicts,
     summary: {
       isUltraProcessed: novaGroup === 4,
       additiveCount: parsedAdditives.length,
       hasDebatedIngredients: debatedCount > 0,
+      hasUserConflicts: userConflicts.length > 0,
       novaGroup,
       nutriScore
     }

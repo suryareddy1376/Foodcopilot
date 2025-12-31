@@ -12,10 +12,21 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
-  Info
+  Info,
+  User,
+  LogOut,
+  Settings,
+  History,
+  Scale
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import ThesysUIRenderer from '@/components/ThesysUI'
+import { useAuth } from '@/components/AuthProvider'
+import AuthModal from '@/components/AuthModal'
+import UserPreferences from '@/components/UserPreferences'
+import ScanHistory from '@/components/ScanHistory'
+import ProductComparison from '@/components/ProductComparison'
+import { addToScanHistory, ScanHistoryItem } from '@/lib/supabase'
 
 // Dynamic imports to avoid SSR issues with camera APIs
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false })
@@ -31,6 +42,7 @@ interface Message {
     barcode: string
     novaGroup?: number
     nutriScore?: string
+    productId?: string
   }
   type?: 'scan' | 'text' | 'ingredients'
 }
@@ -74,8 +86,16 @@ export default function Home() {
   const [streamingContent, setStreamingContent] = useState('')
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
   const [showIngredientScanner, setShowIngredientScanner] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showPreferences, setShowPreferences] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
+  const [comparisonItems, setComparisonItems] = useState<ScanHistoryItem[]>([])
+  const [showUserMenu, setShowUserMenu] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  const { user, profile, signOut, isLoading: authLoading } = useAuth()
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -165,7 +185,22 @@ export default function Home() {
     setMessages(prev => [...prev, userMessage])
 
     try {
-      const response = await fetch(`/api/analyze/${barcode}`)
+      // Build URL with user preferences
+      let url = `/api/analyze/${barcode}`
+      if (profile) {
+        const params = new URLSearchParams()
+        if (profile.dietary_restrictions.length > 0) {
+          params.set('dietary', profile.dietary_restrictions.join(','))
+        }
+        if (profile.allergens.length > 0) {
+          params.set('allergens', profile.allergens.join(','))
+        }
+        if (params.toString()) {
+          url += `?${params.toString()}`
+        }
+      }
+
+      const response = await fetch(url)
       const data = await response.json()
 
       if (data.error) {
@@ -187,10 +222,35 @@ export default function Home() {
             brand: data.product.brand,
             barcode: data.product.barcode,
             novaGroup: data.product.nova_group,
-            nutriScore: data.product.nutri_score
+            nutriScore: data.product.nutri_score,
+            productId: data.product.product_id
           }
         }
         setMessages(prev => [...prev, assistantMessage])
+
+        // Save to scan history if user is logged in
+        if (user) {
+          console.log('Attempting to save scan to history for user:', user.id)
+          try {
+            const result = await addToScanHistory(user.id, {
+              barcode: data.product.barcode,
+              product_name: data.product.product_name,
+              brand: data.product.brand,
+              nova_group: data.product.nova_group,
+              nutri_score: data.product.nutri_score,
+              product_id: data.product.product_id
+            })
+            if (result) {
+              console.log('✅ Saved to history successfully:', result.id)
+            } else {
+              console.warn('⚠️ addToScanHistory returned null (might be duplicate or error)')
+            }
+          } catch (err) {
+            console.error('❌ Failed to save to history:', err)
+          }
+        } else {
+          console.log('User not logged in, skipping history save')
+        }
       }
     } catch (error) {
       const errorMessage: Message = {
@@ -277,15 +337,104 @@ export default function Home() {
                 <p className="text-xs text-slate-500">Thesys C1 • Generative UI</p>
               </div>
             </div>
-            {messages.length > 0 && (
-              <button
-                onClick={clearChat}
-                className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                title="Clear chat"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            )}
+            
+            <div className="flex items-center gap-2">
+              {/* History Button */}
+              {user && (
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="p-2 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  title="Scan History"
+                >
+                  <History className="w-5 h-5" />
+                </button>
+              )}
+
+              {/* Clear Chat */}
+              {messages.length > 0 && (
+                <button
+                  onClick={clearChat}
+                  className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="Clear chat"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
+
+              {/* User Menu / Auth */}
+              {authLoading ? (
+                <div className="w-9 h-9 rounded-full bg-slate-100 animate-pulse" />
+              ) : user ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
+                      {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 hidden sm:block max-w-[100px] truncate">
+                      {profile?.display_name || user.email?.split('@')[0]}
+                    </span>
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {showUserMenu && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-10" 
+                        onClick={() => setShowUserMenu(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-20">
+                        <div className="px-4 py-2 border-b border-slate-100">
+                          <p className="text-sm font-medium text-slate-800 truncate">
+                            {profile?.display_name || 'User'}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {user.email}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => { setShowPreferences(true); setShowUserMenu(false) }}
+                          className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                        >
+                          <Settings className="w-4 h-4" />
+                          Preferences
+                          {(profile?.dietary_restrictions?.length || 0) + (profile?.allergens?.length || 0) > 0 && (
+                            <span className="ml-auto text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                              {(profile?.dietary_restrictions?.length || 0) + (profile?.allergens?.length || 0)}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setShowHistory(true); setShowUserMenu(false) }}
+                          className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                        >
+                          <History className="w-4 h-4" />
+                          Scan History
+                        </button>
+                        <hr className="my-2 border-slate-100" />
+                        <button
+                          onClick={() => { signOut(); setShowUserMenu(false) }}
+                          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Sign Out
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAuthModal(true)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="hidden sm:inline">Sign In</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -309,6 +458,37 @@ export default function Home() {
               Scan a barcode or ingredient list and get instant, intelligent AI analysis. 
               No jargon, just clear answers with beautiful Generative UI.
             </p>
+
+            {/* Personalization Badge */}
+            {user && profile && (profile.dietary_restrictions.length > 0 || profile.allergens.length > 0) && (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm mb-6">
+                <CheckCircle className="w-4 h-4" />
+                <span>
+                  Personalized for: {[...profile.dietary_restrictions, ...profile.allergens].slice(0, 3).join(', ')}
+                  {(profile.dietary_restrictions.length + profile.allergens.length) > 3 && ' +more'}
+                </span>
+                <button 
+                  onClick={() => setShowPreferences(true)}
+                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
+
+            {/* Sign In Prompt for non-users */}
+            {!user && (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm mb-6">
+                <Info className="w-4 h-4" />
+                <span>Sign in to save history, preferences & compare products</span>
+                <button 
+                  onClick={() => setShowAuthModal(true)}
+                  className="ml-2 text-amber-600 hover:text-amber-800 underline font-medium"
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -501,6 +681,39 @@ export default function Home() {
           onClose={() => setShowIngredientScanner(false)}
         />
       )}
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
+
+      {/* User Preferences Modal */}
+      <UserPreferences
+        isOpen={showPreferences}
+        onClose={() => setShowPreferences(false)}
+      />
+
+      {/* Scan History Modal */}
+      <ScanHistory
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        onRescan={(barcode) => analyzeBarcode(barcode)}
+        onCompare={(items) => {
+          setComparisonItems(items)
+          setShowComparison(true)
+        }}
+      />
+
+      {/* Product Comparison Modal */}
+      <ProductComparison
+        isOpen={showComparison}
+        onClose={() => {
+          setShowComparison(false)
+          setComparisonItems([])
+        }}
+        items={comparisonItems}
+      />
     </div>
   )
 }
