@@ -90,10 +90,30 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
         // Wait for video to be ready before showing
         await new Promise<void>((resolve, reject) => {
           const video = videoRef.current!
-          const timeout = setTimeout(() => reject(new Error('Video load timeout')), 10000)
+          const timeout = setTimeout(() => {
+            // Even on timeout, try to continue if video seems to be working
+            if (video.readyState >= 2) {
+              resolve()
+            } else {
+              reject(new Error('Video load timeout'))
+            }
+          }, 10000)
+          
           video.onloadedmetadata = () => {
             clearTimeout(timeout)
-            video.play().then(resolve).catch(reject)
+            // On mobile, play() might fail silently or need user interaction
+            video.play()
+              .then(resolve)
+              .catch((playError) => {
+                console.warn('Video autoplay failed:', playError)
+                // Still resolve - video might work with user interaction
+                resolve()
+              })
+          }
+          
+          video.onerror = (e) => {
+            clearTimeout(timeout)
+            reject(new Error('Video stream error'))
           }
         })
         
@@ -141,20 +161,45 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
   }
 
   const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
+    try {
+      if (!videoRef.current || !canvasRef.current) {
+        setError('Camera not ready. Please try again.')
+        return
+      }
+      
       const video = videoRef.current
       const canvas = canvasRef.current
+      
+      // Check if video is actually playing and has dimensions
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        setError('Camera feed not ready yet. Please wait a moment and try again.')
+        return
+      }
       
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       
       const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.drawImage(video, 0, 0)
-        const imageData = canvas.toDataURL('image/jpeg', 0.9)
-        setCapturedImage(imageData)
-        stopCamera()
+      if (!ctx) {
+        setError('Could not capture image. Please try uploading a photo instead.')
+        return
       }
+      
+      ctx.drawImage(video, 0, 0)
+      const imageData = canvas.toDataURL('image/jpeg', 0.9)
+      
+      // Validate the captured image
+      if (!imageData || imageData === 'data:,') {
+        setError('Failed to capture image. Please try again.')
+        return
+      }
+      
+      setCapturedImage(imageData)
+      setError(null)
+      stopCamera()
+    } catch (err: any) {
+      console.error('Capture error:', err)
+      setError(`Failed to capture: ${err.message || 'Unknown error'}. Try uploading a photo instead.`)
     }
   }
 
@@ -329,7 +374,7 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
             </button>
 
             {error && (
-              <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">
+              <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm whitespace-pre-line">
                 {error}
               </div>
             )}
@@ -364,12 +409,14 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
         {/* Camera view */}
         {isCameraActive && !capturedImage && (
           <div className="w-full max-w-md">
-            <div className="relative rounded-2xl overflow-hidden bg-gray-900">
+            <div className="relative rounded-2xl overflow-hidden bg-gray-900 min-h-[300px]">
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
-                className="w-full"
+                muted
+                className="w-full h-full object-cover"
+                style={{ minHeight: '300px' }}
               />
               
               {/* Capture guide */}
@@ -382,9 +429,15 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
               </div>
             </div>
 
+            {error && (
+              <div className="mt-4 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm whitespace-pre-line">
+                {error}
+              </div>
+            )}
+
             <div className="flex gap-3 mt-4">
               <button
-                onClick={stopCamera}
+                onClick={() => { stopCamera(); setError(null); }}
                 className="flex-1 py-3 px-4 bg-white/10 text-white rounded-xl font-medium hover:bg-white/20 transition-colors"
               >
                 Cancel
