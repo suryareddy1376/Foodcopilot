@@ -15,10 +15,12 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isCameraActive, setIsCameraActive] = useState(false)
+  const [isVideoReady, setIsVideoReady] = useState(false)
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   const startCamera = async () => {
@@ -84,15 +86,26 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
       }
       
       if (videoRef.current) {
-        videoRef.current.srcObject = stream
+        const video = videoRef.current
+        video.srcObject = stream
         streamRef.current = stream
+        
+        // Set up video ready detection
+        const handleCanPlay = () => {
+          console.log('Video can play, dimensions:', video.videoWidth, 'x', video.videoHeight)
+          setIsVideoReady(true)
+        }
+        
+        video.addEventListener('canplay', handleCanPlay)
+        video.addEventListener('playing', handleCanPlay)
         
         // Wait for video to be ready before showing
         await new Promise<void>((resolve, reject) => {
-          const video = videoRef.current!
           const timeout = setTimeout(() => {
+            console.log('Video timeout, readyState:', video.readyState)
             // Even on timeout, try to continue if video seems to be working
             if (video.readyState >= 2) {
+              setIsVideoReady(true)
               resolve()
             } else {
               reject(new Error('Video load timeout'))
@@ -100,13 +113,19 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
           }, 10000)
           
           video.onloadedmetadata = () => {
+            console.log('Video metadata loaded:', video.videoWidth, 'x', video.videoHeight)
             clearTimeout(timeout)
             // On mobile, play() might fail silently or need user interaction
             video.play()
-              .then(resolve)
+              .then(() => {
+                console.log('Video playing')
+                setIsVideoReady(true)
+                resolve()
+              })
               .catch((playError) => {
                 console.warn('Video autoplay failed:', playError)
                 // Still resolve - video might work with user interaction
+                setIsVideoReady(true)
                 resolve()
               })
           }
@@ -158,48 +177,86 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
       streamRef.current = null
     }
     setIsCameraActive(false)
+    setIsVideoReady(false)
   }
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     try {
-      if (!videoRef.current || !canvasRef.current) {
-        setError('Camera not ready. Please try again.')
+      console.log('Capture started')
+      
+      if (!videoRef.current) {
+        setError('Camera not initialized. Please try again.')
         return
       }
       
       const video = videoRef.current
-      const canvas = canvasRef.current
+      
+      // Log video state for debugging
+      console.log('Video state:', {
+        readyState: video.readyState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        paused: video.paused,
+        ended: video.ended
+      })
       
       // Check if video is actually playing and has dimensions
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        setError('Camera feed not ready yet. Please wait a moment and try again.')
+      if (video.readyState < 2) {
+        setError('Camera is still loading. Please wait a moment and try again.')
         return
       }
       
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      // Get dimensions - use natural dimensions or fallback to display dimensions
+      let width = video.videoWidth || video.clientWidth || 640
+      let height = video.videoHeight || video.clientHeight || 480
+      
+      if (width === 0 || height === 0) {
+        // Last resort: use fixed dimensions
+        width = 640
+        height = 480
+      }
+      
+      console.log('Using dimensions:', width, 'x', height)
+      
+      // Create a new canvas for capture (don't rely on ref)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
       
       const ctx = canvas.getContext('2d')
       if (!ctx) {
-        setError('Could not capture image. Please try uploading a photo instead.')
+        setError('Could not create capture context. Please try uploading a photo instead.')
         return
       }
       
-      ctx.drawImage(video, 0, 0)
-      const imageData = canvas.toDataURL('image/jpeg', 0.9)
+      // Draw the video frame
+      ctx.drawImage(video, 0, 0, width, height)
       
-      // Validate the captured image
-      if (!imageData || imageData === 'data:,') {
-        setError('Failed to capture image. Please try again.')
+      // Get the image data
+      let imageData: string
+      try {
+        imageData = canvas.toDataURL('image/jpeg', 0.85)
+      } catch (e) {
+        // Try PNG if JPEG fails
+        console.warn('JPEG failed, trying PNG:', e)
+        imageData = canvas.toDataURL('image/png')
+      }
+      
+      console.log('Image captured, length:', imageData.length)
+      
+      // Validate the captured image (should be more than just the header)
+      if (!imageData || imageData.length < 1000) {
+        setError('Captured image appears to be empty. Please ensure the camera is working and try again.')
         return
       }
       
       setCapturedImage(imageData)
       setError(null)
       stopCamera()
+      
     } catch (err: any) {
       console.error('Capture error:', err)
-      setError(`Failed to capture: ${err.message || 'Unknown error'}. Try uploading a photo instead.`)
+      setError(`Capture failed: ${err.message || 'Unknown error'}. Please try uploading a photo instead.`)
     }
   }
 
@@ -388,12 +445,39 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
               </div>
             </div>
 
+            {/* Native camera capture - more reliable on mobile */}
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              className="w-full py-4 px-6 bg-white/10 text-white rounded-2xl font-medium flex items-center justify-center gap-3 hover:bg-white/20 transition-colors border border-white/10"
+            >
+              <Camera className="w-5 h-5" />
+              Take Photo (Native Camera)
+            </button>
+
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/20"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-black text-white/40">or</span>
+              </div>
+            </div>
+
             <button
               onClick={() => fileInputRef.current?.click()}
               className="w-full py-4 px-6 bg-white/10 text-white rounded-2xl font-medium flex items-center justify-center gap-3 hover:bg-white/20 transition-colors border border-white/10"
             >
               <Upload className="w-5 h-5" />
-              Upload Photo
+              Upload from Gallery
             </button>
 
             <input
@@ -415,18 +499,31 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
                 autoPlay
                 playsInline
                 muted
+                webkit-playsinline="true"
                 className="w-full h-full object-cover"
-                style={{ minHeight: '300px' }}
+                style={{ minHeight: '300px', transform: 'scaleX(1)' }}
               />
               
-              {/* Capture guide */}
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute inset-4 border-2 border-dashed border-white/30 rounded-xl flex items-center justify-center">
-                  <p className="text-white/50 text-sm bg-black/50 px-3 py-1 rounded-full">
-                    Position ingredient list here
-                  </p>
+              {/* Loading overlay */}
+              {!isVideoReady && (
+                <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-white/60">Starting camera...</p>
+                  </div>
                 </div>
-              </div>
+              )}
+              
+              {/* Capture guide */}
+              {isVideoReady && (
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute inset-4 border-2 border-dashed border-white/30 rounded-xl flex items-center justify-center">
+                    <p className="text-white/50 text-sm bg-black/50 px-3 py-1 rounded-full">
+                      Position ingredient list here
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -444,10 +541,20 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
               </button>
               <button
                 onClick={capturePhoto}
-                className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-emerald-600 hover:to-teal-700 transition-all"
+                disabled={!isVideoReady}
+                className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-emerald-600 hover:to-teal-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Camera className="w-5 h-5" />
-                Capture
+                {isVideoReady ? (
+                  <>
+                    <Camera className="w-5 h-5" />
+                    Capture
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Loading...
+                  </>
+                )}
               </button>
             </div>
           </div>
