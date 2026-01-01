@@ -132,12 +132,34 @@ function FloatingActions({
   )
 }
 
+// Toast notification component
+function Toast({ message, type, onClose }: { message: string; type: 'success' | 'error' | 'info'; onClose: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000)
+    return () => clearTimeout(timer)
+  }, [onClose])
+
+  const bgColor = type === 'success' ? 'bg-emerald-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+  const Icon = type === 'success' ? CheckCircle : type === 'error' ? AlertCircle : Info
+
+  return (
+    <div className={`fixed bottom-32 left-1/2 -translate-x-1/2 z-50 ${bgColor} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-fade-in-up max-w-[90vw]`}>
+      <Icon className="w-5 h-5 flex-shrink-0" />
+      <span className="text-sm font-medium">{message}</span>
+      <button onClick={onClose} className="ml-2 hover:opacity-70">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [showIngredientScanner, setShowIngredientScanner] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPreferences, setShowPreferences] = useState(false)
@@ -403,13 +425,19 @@ export default function Home() {
               nutri_score: data.product.nutri_score,
               product_id: data.product.product_id
             })
-            if (result) {
-              console.log('✅ Saved to history successfully:', result.id)
-            } else {
-              console.warn('⚠️ addToScanHistory returned null (might be duplicate or error)')
+            if (result.data) {
+              console.log('✅ Saved to history successfully:', result.data.id)
+              setToast({ message: 'Saved to scan history', type: 'success' })
+            } else if (result.error) {
+              console.warn('⚠️ Failed to save to history:', result.error)
+              // Only show error toast if it's a real error (not duplicate)
+              if (!result.error.includes('duplicate')) {
+                setToast({ message: result.error, type: 'error' })
+              }
             }
           } catch (err) {
             console.error('❌ Failed to save to history:', err)
+            setToast({ message: 'Could not save to history', type: 'error' })
           }
         } else {
           console.log('User not logged in, skipping history save')
@@ -759,6 +787,15 @@ export default function Home() {
         }}
         items={comparisonItems}
       />
+
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
     </ActionProvider>
   )

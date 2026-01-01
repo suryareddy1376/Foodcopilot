@@ -37,53 +37,95 @@ export default function IngredientScanner({ onScan, onClose }: IngredientScanner
 
       // Check if mediaDevices API is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError('Camera API not available. Please use a modern browser with HTTPS.')
+        // iOS Safari specific check - camera might still work
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        if (isIOS) {
+          setError('Camera access may require Safari browser on iOS. Try uploading a photo instead, or use Safari if you\'re using a different browser.')
+        } else {
+          setError('Camera API not available. Please use a modern browser with HTTPS, or try uploading a photo instead.')
+        }
         return
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: { ideal: 'environment' }, 
-          width: { ideal: 1920 }, 
-          height: { ideal: 1080 } 
+      // Check permission status first if available (not supported on all browsers)
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
+          if (permissionStatus.state === 'denied') {
+            setError('Camera permission was previously denied. Please enable camera access in your browser settings:\n\n• iOS Safari: Settings → Safari → Camera\n• Chrome: Click the lock icon in the address bar → Site Settings → Camera\n• Android: Settings → Apps → Browser → Permissions → Camera')
+            return
+          }
+        } catch {
+          // Permission API not supported, continue anyway
         }
-      })
+      }
+
+      // Try with ideal constraints first
+      let stream: MediaStream | null = null
+      const constraints = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+        { video: { facingMode: 'environment' } },
+        { video: { facingMode: 'user' } },
+        { video: true }
+      ]
+
+      for (const constraint of constraints) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraint)
+          break
+        } catch (e) {
+          console.log('Constraint failed:', constraint, e)
+          continue
+        }
+      }
+
+      if (!stream) {
+        throw new Error('Could not start camera with any settings')
+      }
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
+        
+        // Wait for video to be ready before showing
+        await new Promise<void>((resolve, reject) => {
+          const video = videoRef.current!
+          const timeout = setTimeout(() => reject(new Error('Video load timeout')), 10000)
+          video.onloadedmetadata = () => {
+            clearTimeout(timeout)
+            video.play().then(resolve).catch(reject)
+          }
+        })
+        
         setIsCameraActive(true)
         setError(null)
       }
     } catch (err: any) {
       console.error('Camera error:', err)
       let errorMessage = 'Could not access camera. '
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      const isAndroid = /Android/.test(navigator.userAgent)
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMessage = 'Camera permission denied. Please allow camera access in your browser settings and try again.'
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        errorMessage = 'No camera found on this device. Try uploading a photo instead.'
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        errorMessage = 'Camera is in use by another app. Close other apps and try again.'
-      } else if (err.name === 'SecurityError') {
-        errorMessage = 'Camera blocked by browser security. Check that you are using HTTPS.'
-      } else if (err.name === 'OverconstrainedError') {
-        errorMessage = 'Camera settings not supported. Trying with default settings...'
-        // Try again with basic constraints
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream
-            streamRef.current = stream
-            setIsCameraActive(true)
-            setError(null)
-            return
-          }
-        } catch {
-          errorMessage = 'Could not start camera with any settings.'
+        if (isIOS) {
+          errorMessage = 'Camera permission denied.\n\nTo enable:\n1. Open Settings app\n2. Scroll to Safari (or your browser)\n3. Enable Camera access\n4. Return here and try again\n\nOr simply upload a photo instead!'
+        } else if (isAndroid) {
+          errorMessage = 'Camera permission denied.\n\nTo enable:\n1. Tap the lock icon in the address bar\n2. Tap "Permissions"\n3. Enable Camera\n4. Refresh the page\n\nOr simply upload a photo instead!'
+        } else {
+          errorMessage = 'Camera permission denied. Click the camera icon in your browser\'s address bar to enable access, or upload a photo instead.'
         }
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMessage = 'No camera found on this device. Please upload a photo instead.'
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMessage = 'Camera is in use by another app. Close other apps (especially video call apps) and try again, or upload a photo instead.'
+      } else if (err.name === 'SecurityError') {
+        errorMessage = 'Camera blocked by browser security. Make sure you\'re using HTTPS. Try uploading a photo instead.'
+      } else if (err.name === 'AbortError') {
+        errorMessage = 'Camera initialization was interrupted. Please try again.'
+      } else if (err.message?.includes('timeout')) {
+        errorMessage = 'Camera took too long to start. Please try again or upload a photo instead.'
       } else {
-        errorMessage += err.message || 'Unknown error occurred.'
+        errorMessage = `Camera error: ${err.message || 'Unknown error'}. Try uploading a photo instead.`
       }
       
       setError(errorMessage)

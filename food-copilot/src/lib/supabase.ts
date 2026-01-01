@@ -280,63 +280,105 @@ export async function getScanHistory(userId: string, limit = 50): Promise<ScanHi
   }
 }
 
-// Add to scan history
+// Add to scan history - uses API route for reliable authentication
 export async function addToScanHistory(
   userId: string,
   item: Omit<ScanHistoryItem, 'id' | 'user_id' | 'scanned_at' | 'is_favorite'>
-): Promise<ScanHistoryItem | null> {
+): Promise<{ data: ScanHistoryItem | null; error: string | null }> {
   console.log('addToScanHistory called with userId:', userId, 'barcode:', item.barcode)
   
   try {
-    // Verify we have an active session and refresh if needed
+    // Get current session for API authentication
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
     if (sessionError) {
       console.error('Session error:', sessionError.message)
-      return null
+      // Try to refresh
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError || !refreshData.session) {
+        return { data: null, error: 'Session expired. Please log in again to save scan history.' }
+      }
     }
     
-    if (!session) {
-      console.error('No active session - cannot save to history')
+    let activeSession = session
+    if (!activeSession) {
       // Try to refresh the session
       const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
       if (refreshError || !refreshData.session) {
         console.error('Failed to refresh session:', refreshError?.message)
-        return null
+        return { data: null, error: 'Not logged in. Please log in to save scan history.' }
       }
+      activeSession = refreshData.session
       console.log('Session refreshed successfully')
     }
+
+    // Use API route for reliable server-side authentication
+    // This bypasses potential client-side RLS issues
+    const response = await fetch('/api/history', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${activeSession.access_token}`
+      },
+      body: JSON.stringify({
+        barcode: item.barcode,
+        product_name: item.product_name || null,
+        brand: item.brand || null,
+        nova_group: item.nova_group || null,
+        nutri_score: item.nutri_score || null,
+        product_id: item.product_id || null
+      })
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      console.error('API error saving to history:', result)
+      
+      // If API fails, try direct insert as fallback
+      console.log('Trying direct insert as fallback...')
+      return await addToScanHistoryDirect(userId, item, activeSession)
+    }
+
+    console.log('✅ Successfully saved to scan history via API:', result.item?.id)
+    return { data: result.item, error: null }
     
+  } catch (err: any) {
+    console.error('Unexpected error in addToScanHistory:', err)
+    return { data: null, error: 'Failed to save scan. Please try again.' }
+  }
+}
+
+// Direct insert fallback (used when API fails)
+async function addToScanHistoryDirect(
+  userId: string,
+  item: Omit<ScanHistoryItem, 'id' | 'user_id' | 'scanned_at' | 'is_favorite'>,
+  session: any
+): Promise<{ data: ScanHistoryItem | null; error: string | null }> {
+  try {
     // Verify user ID matches session
     const currentUserId = session?.user?.id
     if (currentUserId && currentUserId !== userId) {
       console.warn('User ID mismatch - using session user ID')
       userId = currentUserId
     }
-    
-    console.log('Session verified, user:', userId)
 
-    // Check if this barcode was recently scanned (within last 5 minutes) to avoid duplicates
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-    const { data: existing, error: checkError } = await supabase
+    // Check if this barcode was recently scanned (within last 2 minutes) to avoid duplicates
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+    const { data: existing } = await supabase
       .from('scan_history')
-      .select('id')
+      .select('id, barcode, product_name')
       .eq('user_id', userId)
       .eq('barcode', item.barcode)
-      .gte('scanned_at', fiveMinutesAgo)
+      .gte('scanned_at', twoMinutesAgo)
       .limit(1)
 
-    if (checkError) {
-      console.error('Error checking for duplicates:', checkError.message, checkError.code, checkError.hint)
-      // Continue anyway - better to have a duplicate than no record
-    }
-
     if (existing && existing.length > 0) {
-      console.log('Skipping duplicate scan within 5 minutes')
-      return existing[0] as unknown as ScanHistoryItem
+      console.log('Skipping duplicate scan within 2 minutes')
+      return { data: existing[0] as unknown as ScanHistoryItem, error: null }
     }
 
-    console.log('Inserting scan history record...')
+    console.log('Inserting scan history record directly...')
     const { data, error } = await supabase
       .from('scan_history')
       .insert({
@@ -353,26 +395,15 @@ export async function addToScanHistory(
       .single()
 
     if (error) {
-      console.error('Error adding to scan history:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      })
-      
-      // If RLS policy error, try to provide more context
-      if (error.code === '42501' || error.message.includes('policy')) {
-        console.error('RLS Policy violation - ensure the scan_history table has proper INSERT policy for authenticated users')
-      }
-      
-      return null
+      console.error('Direct insert error:', error)
+      return { data: null, error: 'Failed to save to history' }
     }
     
-    console.log('✅ Successfully saved to scan history:', data?.id)
-    return data
+    console.log('✅ Successfully saved to scan history (direct):', data?.id)
+    return { data, error: null }
   } catch (err) {
-    console.error('Unexpected error in addToScanHistory:', err)
-    return null
+    console.error('Direct insert exception:', err)
+    return { data: null, error: 'Failed to save to history' }
   }
 }
 
