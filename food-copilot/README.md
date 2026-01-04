@@ -1,125 +1,53 @@
-# Food Co-Pilot
+# Food Co-Pilot 🥗
 
-AI-native consumer health co-pilot for understanding food labels. Chat-first interface where AI reasons over real ingredient data to provide calm, honest guidance.
+**AI-native consumer health co-pilot for understanding food labels.**
 
-## ✨ Key Features
+Chat-first interface where AI reasons over real ingredient data to provide calm, honest guidance.
 
-### 🧠 Structured Reasoning UI
-AI responses are organized into clear reasoning blocks:
-- **🧠 What I think you care about** - AI identifies your main concern
-- **⚠️ Why this matters** - Context and significance
-- **⚖️ Tradeoffs** - Balanced perspective
-- **❓ Uncertainty** - Honest unknowns
-- **✅ Bottom-line decision** - Clear takeaway
+## ✨ Features
 
-### 🎯 Decision Verdict Cards
-Bold, color-coded decision summaries:
-- 🟢 **Safe for daily use** - Minimally processed, no concerns
-- 🟡 **Okay occasionally** - Ultra-processed but not harmful
-- 🔴 **Avoid if health-conscious** - Genuine health concerns
-
-### 💡 Intent Inference
-AI explicitly states what it assumes you want to know:
-> "I'm assuming you want to know if this is safe for regular consumption."
-
-No asking questions first - AI infers your intent immediately.
-
-### 🔍 Confidence Indicators
-Every assessment shows data confidence level:
-- **High** - Complete product data available
-- **Medium** - Partial data, some scores unavailable
-- **Low** - Missing key information
-
-### ❓ Uncertainty Disclosure
-Explicit "what we don't know" section:
-- Exact ingredient quantities aren't disclosed
-- Assessment assumes typical industry usage
-
-### 🎤 Moment-of-Decision Questions
-Contextual clarification after the verdict:
-> "Is this for daily use or occasional treat?"
-
-Refines the assessment without blocking the initial response.
-
-### 💾 Session Memory
-Lightweight preference tracking during your session:
-- "You usually avoid additives"
-- "You care about daily safety"
-
-### 🏷️ AI Interpretation Labels
-All outputs clearly labeled as AI interpretation, not raw data.
+- **🧠 Structured Reasoning** — AI shows its thinking: concerns, tradeoffs, uncertainties, and bottom-line
+- **🎯 Decision Verdicts** — Clear 🟢 Safe / 🟡 Occasional / 🔴 Avoid recommendations
+- **💡 Intent Inference** — AI assumes what you want to know (no 20 questions)
+- **🔍 Confidence Indicators** — Transparent about data quality
+- **⚠️ Failure Transparency** — Refuses to guess when data is insufficient
+- **💾 Session Memory** — Remembers your preferences within a session
 
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment template and fill in your values
-cp .env.example .env.local
-
-# Run development server
+cp .env.example .env.local  # Add your API keys
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+## 🧪 Test Barcodes
 
-## 📦 Deployment to Vercel (Free Tier)
+- `3017620422003` — Nutella
+- `5000112637922` — Coca-Cola
+- `7622210449283` — Oreo
 
-### Prerequisites
-1. GitHub account
-2. Vercel account (free at [vercel.com](https://vercel.com))
-3. Supabase project (free at [supabase.com](https://supabase.com))
-4. Thesys API key (from [thesys.dev](https://thesys.dev))
+## 🛠️ Tech Stack
 
-### Step 1: Set Up Supabase
-1. Create a new project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run the contents of `supabase-schema.sql`
-3. Go to Project Settings → API to get your URL and anon key
-4. Enable Email auth in Authentication → Providers
-
-### Step 2: Deploy to Vercel
-1. Push your code to GitHub
-2. Go to [vercel.com/new](https://vercel.com/new)
-3. Import your GitHub repository
-4. Add environment variables in Vercel dashboard:
-
-| Variable | Type | Required |
-|----------|------|----------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Public | ✅ |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | ✅ |
-| `THESYS_API_KEY` | Secret | ✅ |
-| `BYTEZ_API_KEY` | Secret | Optional |
-| `OFF_USERNAME` | Secret | Optional |
-| `OFF_PASSWORD` | Secret | Optional |
-
-5. Click "Deploy"
-
-### Step 3: Verify
-- Test barcode scanning with: `3017620422003` (Nutella)
-- Test AI chat functionality
-- Test user authentication
-
-## 🗄️ Database Setup
-
-Run the SQL schema in your Supabase SQL Editor:
-
-1. Go to your Supabase project dashboard
-2. Open SQL Editor
-3. Copy contents of `supabase-schema.sql`
-4. Run the query
+- **Next.js 14** + TypeScript + Tailwind CSS
+- **Thesys AI** (Generative UI with Claude Sonnet)
+- **Supabase** (PostgreSQL + Auth)
+- **Open Food Facts** API
+- **Tesseract.js** (OCR for ingredient scanning)
+- **html5-qrcode** (Barcode scanning)
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────┐
 │           Chat-First Frontend           │
-│     (barcode input → AI response)       │
+│  (barcode scan / ingredient OCR → AI)   │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
 │              API Routes                 │
 │  /api/analyze/[barcode]  /api/chat      │
+│  /api/compare            /api/history   │
 └────────────────────┬────────────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -128,69 +56,25 @@ Run the SQL schema in your Supabase SQL Editor:
 │ Open    │   │ Signal    │   │ Thesys   │
 │ Food    │   │ Detection │   │ AI       │
 │ Facts   │   │           │   │          │
-└────┬────┘   └───────────┘   └──────────┘
-     │
-     ▼
+└─────────┘   └───────────┘   └──────────┘
+                     │
+                     ▼
 ┌─────────────────────────────────────────┐
 │        Supabase PostgreSQL              │
-│  products | ingredients | sessions      │
+│     products | scans | preferences      │
 └─────────────────────────────────────────┘
 ```
 
 ## ⚙️ Environment Variables
 
-Copy `.env.example` to `.env.local` and configure:
-
-```bash
-# Supabase (Required)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-
-# AI Services
-THESYS_API_KEY=your-thesys-key
-BYTEZ_API_KEY=your-bytez-key  # Optional backup
-
-# Open Food Facts (Optional)
-OFF_USERNAME=your-username
-OFF_PASSWORD=your-password
-```
-
-## 🔄 How It Works
-
-1. **User enters barcode** → System fetches from Open Food Facts
-2. **Signal detection** → Deterministic pattern matching (emulsifiers, NOVA markers, etc.)
-3. **AI reasoning** → AI synthesizes signals into human-readable insight
-4. **Honest communication** → Uncertainty flagged, no fear language
-
-## 🧪 Sample Barcodes
-
-- `3017620422003` - Nutella
-- `5000112637922` - Coca-Cola
-- `7622210449283` - Oreo
-- `8000500310427` - Ferrero Rocher
-
-## 💡 Design Principles
-
-- **AI is the interface**, not a feature
-- **Reasoning over data**, not data display
-- **Honest uncertainty** communication
-- **Minimal cognitive load**
-
-## ❌ What This Is NOT
-
-- Nutrition scanner
-- Database browser
-- Dashboard app
-- Feature-heavy health tracker
-
-## 🛠️ Tech Stack
-
-- Next.js 14 (App Router)
-- TypeScript
-- Tailwind CSS
-- Supabase (PostgreSQL + Auth)
-- Thesys AI (Generative UI)
-- Open Food Facts API
+| Variable | Type | Required | Description |
+|----------|------|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Public | ✅ | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | ✅ | Supabase anonymous key |
+| `THESYS_API_KEY` | Secret | ✅ | Thesys AI API key |
+| `BYTEZ_API_KEY` | Secret | Optional | Bytez AI fallback |
+| `OFF_USERNAME` | Secret | Optional | Open Food Facts username |
+| `OFF_PASSWORD` | Secret | Optional | Open Food Facts password |
 
 ## 📁 Project Structure
 
@@ -198,20 +82,41 @@ OFF_PASSWORD=your-password
 food-copilot/
 ├── src/
 │   ├── app/
-│   │   ├── api/           # API routes
-│   │   │   ├── analyze/   # Product analysis
-│   │   │   ├── chat/      # AI chat
-│   │   │   ├── compare/   # Product comparison
-│   │   │   └── history/   # Scan history
-│   │   ├── layout.tsx     # Root layout
-│   │   └── page.tsx       # Home page
-│   ├── components/        # React components
-│   └── lib/               # Utilities & services
-├── .env.example           # Environment template
-├── vercel.json            # Vercel configuration
-├── supabase-schema.sql    # Database schema
+│   │   ├── api/
+│   │   │   ├── analyze/       # Product analysis endpoint
+│   │   │   ├── chat/          # AI chat streaming
+│   │   │   ├── compare/       # Product comparison
+│   │   │   └── history/       # Scan history
+│   │   ├── globals.css        # Global styles
+│   │   ├── layout.tsx         # Root layout
+│   │   └── page.tsx           # Main chat interface
+│   ├── components/
+│   │   ├── AuthModal.tsx      # Login/signup modal
+│   │   ├── AuthProvider.tsx   # Auth context
+│   │   ├── BarcodeScanner.tsx # Camera barcode scanner
+│   │   ├── ErrorBoundary.tsx  # Error handling
+│   │   ├── IngredientScanner.tsx # OCR ingredient scanner
+│   │   ├── ProductComparison.tsx # Compare products
+│   │   ├── ScanHistory.tsx    # User scan history
+│   │   ├── ThesysUI.tsx       # Generative UI renderer
+│   │   └── UserPreferences.tsx # Dietary preferences
+│   └── lib/
+│       ├── ai.ts              # AI utilities
+│       ├── openfoodfacts.ts   # OFF API client
+│       ├── signals.ts         # Ingredient signal detection
+│       └── supabase.ts        # Supabase client
+├── .env.example               # Environment template
+├── supabase-schema.sql        # Database schema
+├── vercel.json                # Vercel config
 └── package.json
 ```
+
+## 💡 Design Principles
+
+- **AI is the interface** — not a feature bolted on
+- **Reasoning over data** — synthesis, not raw display
+- **Honest uncertainty** — transparent about what we don't know
+- **Minimal cognitive load** — one clear answer, not information overload
 
 ## 📊 Free Tier Limits
 
