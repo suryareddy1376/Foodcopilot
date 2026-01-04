@@ -276,9 +276,21 @@ function ProfileTile({
   )
 }
 
+// Helper to parse markdown bold (**text**) to React elements
+function parseMarkdownBold(text: string): React.ReactNode {
+  const parts = text.split(/\*\*(.*?)\*\*/g)
+  return parts.map((part, index) => {
+    // Odd indices are the bold text (captured groups)
+    if (index % 2 === 1) {
+      return <strong key={index} className="font-semibold text-slate-800">{part}</strong>
+    }
+    return part
+  })
+}
+
 function TextContent({ textMarkdown }: { textMarkdown?: string }) {
   if (!textMarkdown) return null
-  // Simple markdown-like rendering
+  // Simple markdown-like rendering with bold support
   const lines = textMarkdown.split('\n')
   
   return (
@@ -288,12 +300,12 @@ function TextContent({ textMarkdown }: { textMarkdown?: string }) {
           return (
             <div key={i} className="flex items-start gap-2 ml-2">
               <span className="text-emerald-500 mt-1">•</span>
-              <span>{line.slice(2)}</span>
+              <span>{parseMarkdownBold(line.slice(2))}</span>
             </div>
           )
         }
         if (line.trim() === '') return <br key={i} />
-        return <p key={i}>{line}</p>
+        return <p key={i}>{parseMarkdownBold(line)}</p>
       })}
     </div>
   )
@@ -340,8 +352,8 @@ function ListItem({ title, subtitle, iconName }: { title?: string; subtitle?: st
         </div>
       )}
       <div>
-        <div className="font-medium text-slate-800">{title || ''}</div>
-        {subtitle && <div className="text-sm text-slate-500">{subtitle}</div>}
+        <div className="font-medium text-slate-800">{title ? parseMarkdownBold(title) : ''}</div>
+        {subtitle && <div className="text-sm text-slate-500">{parseMarkdownBold(subtitle)}</div>}
       </div>
     </div>
   )
@@ -381,8 +393,8 @@ function CalloutV2({ variant, title, description }: { variant?: string; title?: 
       <div className="flex items-start gap-3">
         <IconComp className={`w-5 h-5 ${style.iconColor} flex-shrink-0 mt-0.5`} />
         <div>
-          <div className="font-semibold text-slate-800">{title || ''}</div>
-          {description && <div className="text-sm text-slate-600 mt-1">{description}</div>}
+          <div className="font-semibold text-slate-800">{title ? parseMarkdownBold(title) : ''}</div>
+          {description && <div className="text-sm text-slate-600 mt-1">{parseMarkdownBold(description)}</div>}
         </div>
       </div>
     </div>
@@ -801,7 +813,7 @@ function IntentInference({ intent }: { intent: string }) {
       </div>
       <div>
         <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">What I think you're asking</p>
-        <p className="text-sm text-slate-700 leading-relaxed">{intent}</p>
+        <p className="text-sm text-slate-700 leading-relaxed">{parseMarkdownBold(intent)}</p>
       </div>
     </div>
   )
@@ -846,7 +858,7 @@ function ConfidenceIndicator({ level, reason }: { level: 'high' | 'medium' | 'lo
         </span>
         <span className="text-xs text-slate-500">Assessment confidence</span>
       </div>
-      <p className={`text-sm ${c.text}`}>{reason || c.defaultReason}</p>
+      <p className={`text-sm ${c.text}`}>{parseMarkdownBold(reason || c.defaultReason)}</p>
     </div>
   )
 }
@@ -876,7 +888,7 @@ function ReasoningBlock({
         {emoji && <span className="text-lg">{emoji}</span>}
         <h4 className="font-semibold text-slate-800 text-sm">{title}</h4>
       </div>
-      <p className="text-sm text-slate-600 leading-relaxed">{content}</p>
+      <p className="text-sm text-slate-600 leading-relaxed">{parseMarkdownBold(content)}</p>
     </div>
   )
 }
@@ -955,7 +967,7 @@ function DecisionVerdict({
         <span className="text-2xl">{config.emoji}</span>
         <h3 className="text-lg font-bold">{config.title}</h3>
       </div>
-      <p className="text-white/90 text-sm leading-relaxed">{summary}</p>
+      <p className="text-white/90 text-sm leading-relaxed">{parseMarkdownBold(summary)}</p>
     </div>
   )
 }
@@ -971,9 +983,9 @@ function DecisionSummaryStrip({
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg text-sm my-2">
       <span className="font-medium text-slate-600">Decision summary:</span>
-      <span className="text-slate-700">{primaryReason}</span>
+      <span className="text-slate-700">{parseMarkdownBold(primaryReason)}</span>
       <ArrowRight className="w-4 h-4 text-slate-400" />
-      <span className="font-semibold text-slate-800">{verdict}</span>
+      <span className="font-semibold text-slate-800">{parseMarkdownBold(verdict)}</span>
     </div>
   )
 }
@@ -1118,7 +1130,7 @@ function UncertaintyDisclosure({ items }: { items: string[] }) {
         {items.map((item, i) => (
           <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
             <Minus className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-            <span>{item}</span>
+            <span>{parseMarkdownBold(item)}</span>
           </li>
         ))}
       </ul>
@@ -1245,7 +1257,7 @@ function HealthRiskAlert({
               Flagged for {conditionLabel}
             </span>
           </div>
-          <p className="text-sm text-slate-700 mb-2">{reason}</p>
+          <p className="text-sm text-slate-700 mb-2">{parseMarkdownBold(reason)}</p>
           
           {/* Nutrient values breakdown */}
           {nutrientValues && nutrientValues.length > 0 && (
@@ -1270,7 +1282,7 @@ function HealthRiskAlert({
           
           <div className="flex items-center gap-2 text-sm">
             <ArrowRight className={`w-4 h-4 ${config.iconColor}`} />
-            <span className="font-medium text-slate-700">{recommendation}</span>
+            <span className="font-medium text-slate-700">{parseMarkdownBold(recommendation)}</span>
           </div>
         </div>
       </div>
@@ -1377,7 +1389,7 @@ function AlternativeProductCard({
               {whyBetter.slice(0, 2).map((reason, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs text-emerald-700">
                   <CheckCircle className="w-3 h-3" />
-                  <span>{reason}</span>
+                  <span>{parseMarkdownBold(reason)}</span>
                 </div>
               ))}
             </div>
