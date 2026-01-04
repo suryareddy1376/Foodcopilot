@@ -9,22 +9,34 @@ export interface DetectedSignal {
 }
 
 export interface UserConflict {
-  type: 'allergen' | 'dietary'
+  type: 'allergen' | 'dietary' | 'health-condition'
   severity: 'warning' | 'danger'
   item: string
   description: string
   evidence: string[]
+  recommendation?: string
+}
+
+export interface HealthConditionRisk {
+  condition: string
+  conditionLabel: string
+  risk: 'low' | 'medium' | 'high'
+  reason: string
+  nutrientValues: { name: string; value: number; unit: string; threshold: number }[]
+  recommendation: string
 }
 
 export interface SignalDetectionResult {
   signals: DetectedSignal[]
   flaggedAdditives: FlaggedAdditive[]
   userConflicts: UserConflict[]
+  healthConditionRisks: HealthConditionRisk[]
   summary: {
     isUltraProcessed: boolean
     additiveCount: number
     hasDebatedIngredients: boolean
     hasUserConflicts: boolean
+    hasHealthRisks: boolean
     novaGroup: number | null
     nutriScore: string | null
   }
@@ -33,6 +45,7 @@ export interface SignalDetectionResult {
 export interface UserPreferences {
   dietary_restrictions: string[]
   allergens: string[]
+  health_conditions?: string[]
 }
 
 export interface FlaggedAdditive {
@@ -419,17 +432,159 @@ export function detectSignals(
     })
   }
   
+  // Detect health condition risks (empty for now - populated by detectHealthConditionRisks)
+  const healthConditionRisks: HealthConditionRisk[] = []
+  
   return {
     signals,
     flaggedAdditives,
     userConflicts,
+    healthConditionRisks,
     summary: {
       isUltraProcessed: novaGroup === 4,
       additiveCount: parsedAdditives.length,
       hasDebatedIngredients: debatedCount > 0,
       hasUserConflicts: userConflicts.length > 0,
+      hasHealthRisks: false,
       novaGroup,
       nutriScore
     }
   }
+}
+
+// =====================================================
+// HEALTH CONDITION RISK DETECTION
+// =====================================================
+
+// Health condition thresholds (per 100g)
+const HEALTH_CONDITION_CONFIG: Record<string, {
+  label: string
+  nutrients: { key: string; name: string; threshold: number; unit: string }[]
+  keywords: string[]
+  recommendations: { high: string; medium: string }
+}> = {
+  'diabetes': {
+    label: 'Diabetes',
+    nutrients: [
+      { key: 'sugars_100g', name: 'Sugars', threshold: 12.5, unit: 'g' },
+      { key: 'carbohydrates_100g', name: 'Carbohydrates', threshold: 30, unit: 'g' }
+    ],
+    keywords: ['sugar', 'glucose', 'fructose', 'sucrose', 'dextrose', 'maltose', 'corn syrup', 'honey', 'agave'],
+    recommendations: {
+      high: 'Consider sugar-free or low-sugar alternatives',
+      medium: 'Monitor portion size to manage blood sugar'
+    }
+  },
+  'hypertension': {
+    label: 'Hypertension',
+    nutrients: [
+      { key: 'sodium_100g', name: 'Sodium', threshold: 600, unit: 'mg' },
+      { key: 'salt_100g', name: 'Salt', threshold: 1.5, unit: 'g' }
+    ],
+    keywords: ['sodium', 'salt', 'msg', 'monosodium glutamate', 'soy sauce', 'brine'],
+    recommendations: {
+      high: 'Avoid - very high sodium content for blood pressure',
+      medium: 'Limit intake - moderate sodium levels'
+    }
+  },
+  'heart-disease': {
+    label: 'Heart Disease',
+    nutrients: [
+      { key: 'saturated-fat_100g', name: 'Saturated Fat', threshold: 5, unit: 'g' },
+      { key: 'trans-fat_100g', name: 'Trans Fat', threshold: 0.5, unit: 'g' }
+    ],
+    keywords: ['saturated fat', 'trans fat', 'hydrogenated', 'palm oil', 'coconut oil', 'lard', 'butter'],
+    recommendations: {
+      high: 'Avoid - high in unhealthy fats',
+      medium: 'Limit intake - contains saturated fats'
+    }
+  },
+  'high-cholesterol': {
+    label: 'High Cholesterol',
+    nutrients: [
+      { key: 'cholesterol_100g', name: 'Cholesterol', threshold: 60, unit: 'mg' },
+      { key: 'saturated-fat_100g', name: 'Saturated Fat', threshold: 5, unit: 'g' }
+    ],
+    keywords: ['cholesterol', 'egg yolk', 'liver', 'shellfish', 'saturated fat'],
+    recommendations: {
+      high: 'Avoid - high cholesterol/saturated fat content',
+      medium: 'Limit intake to manage cholesterol levels'
+    }
+  }
+}
+
+export function detectHealthConditionRisks(
+  nutriments: Record<string, number> | null,
+  ingredientsText: string | null,
+  healthConditions: string[]
+): HealthConditionRisk[] {
+  if (!healthConditions || healthConditions.length === 0) {
+    return []
+  }
+
+  const risks: HealthConditionRisk[] = []
+  const ingredientsLower = ingredientsText?.toLowerCase() || ''
+
+  for (const condition of healthConditions) {
+    const config = HEALTH_CONDITION_CONFIG[condition]
+    if (!config) continue
+
+    const nutrientValues: { name: string; value: number; unit: string; threshold: number }[] = []
+    let maxRiskLevel: 'low' | 'medium' | 'high' = 'low'
+    const reasons: string[] = []
+
+    // Check nutrient values
+    if (nutriments) {
+      for (const nutrient of config.nutrients) {
+        const value = nutriments[nutrient.key] || nutriments[nutrient.key.replace('_100g', '')] || 0
+        if (value > 0) {
+          nutrientValues.push({
+            name: nutrient.name,
+            value,
+            unit: nutrient.unit,
+            threshold: nutrient.threshold
+          })
+
+          if (value >= nutrient.threshold * 1.5) {
+            maxRiskLevel = 'high'
+            reasons.push(`${nutrient.name}: ${value}${nutrient.unit} (very high)`)
+          } else if (value >= nutrient.threshold) {
+            if (maxRiskLevel !== 'high') maxRiskLevel = 'medium'
+            reasons.push(`${nutrient.name}: ${value}${nutrient.unit} (elevated)`)
+          }
+        }
+      }
+    }
+
+    // Check ingredient keywords
+    const foundKeywords: string[] = []
+    for (const keyword of config.keywords) {
+      if (ingredientsLower.includes(keyword)) {
+        foundKeywords.push(keyword)
+      }
+    }
+
+    if (foundKeywords.length >= 3 && maxRiskLevel === 'low') {
+      maxRiskLevel = 'medium'
+      reasons.push(`Multiple concerning ingredients: ${foundKeywords.slice(0, 3).join(', ')}`)
+    } else if (foundKeywords.length > 0 && reasons.length === 0) {
+      reasons.push(`Contains: ${foundKeywords.slice(0, 3).join(', ')}`)
+    }
+
+    // Only add if there's some risk identified
+    if (maxRiskLevel !== 'low' || foundKeywords.length > 0) {
+      risks.push({
+        condition,
+        conditionLabel: config.label,
+        risk: maxRiskLevel,
+        reason: reasons.join('; ') || `Contains ingredients to monitor for ${config.label}`,
+        nutrientValues,
+        recommendation: maxRiskLevel === 'high' 
+          ? config.recommendations.high 
+          : config.recommendations.medium
+      })
+    }
+  }
+
+  return risks
 }

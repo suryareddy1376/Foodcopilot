@@ -9,6 +9,7 @@ export interface UserProfile {
   display_name: string | null
   dietary_restrictions: string[]
   allergens: string[]
+  health_conditions: string[]
   created_at: string
   updated_at: string
 }
@@ -21,7 +22,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: any }>
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
-  updateProfile: (updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens'>>) => Promise<{ error: any }>
+  updateProfile: (updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens' | 'health_conditions'>>) => Promise<{ error: any }>
   refreshProfile: () => Promise<void>
 }
 
@@ -123,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const updateProfile = async (
-    updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens'>>
+    updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens' | 'health_conditions'>>
   ) => {
     if (!user) return { error: new Error('Not authenticated') }
 

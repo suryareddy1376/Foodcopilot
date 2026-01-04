@@ -432,6 +432,9 @@ export default function Home() {
         if (profile.allergens.length > 0) {
           params.set('allergens', profile.allergens.join(','))
         }
+        if (profile.health_conditions && profile.health_conditions.length > 0) {
+          params.set('health', profile.health_conditions.join(','))
+        }
         if (params.toString()) {
           url += `?${params.toString()}`
         }

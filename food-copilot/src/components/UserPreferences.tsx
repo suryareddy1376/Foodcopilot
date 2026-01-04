@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Check, Loader2, Leaf, AlertTriangle, Save } from 'lucide-react'
+import { X, Check, Loader2, Leaf, AlertTriangle, Save, Heart, Activity } from 'lucide-react'
 import { useAuth } from './AuthProvider'
-import { DIETARY_RESTRICTIONS, COMMON_ALLERGENS } from '@/lib/supabase'
+import { DIETARY_RESTRICTIONS, COMMON_ALLERGENS, HEALTH_CONDITIONS } from '@/lib/supabase'
 
 interface UserPreferencesProps {
   isOpen: boolean
@@ -17,6 +17,9 @@ export default function UserPreferences({ isOpen, onClose }: UserPreferencesProp
   )
   const [allergens, setAllergens] = useState<string[]>(
     profile?.allergens || []
+  )
+  const [healthConditions, setHealthConditions] = useState<string[]>(
+    profile?.health_conditions || []
   )
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -35,13 +38,21 @@ export default function UserPreferences({ isOpen, onClose }: UserPreferencesProp
     setSaveSuccess(false)
   }
 
+  const toggleHealthCondition = (id: string) => {
+    setHealthConditions(prev =>
+      prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id]
+    )
+    setSaveSuccess(false)
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     setSaveSuccess(false)
     
     const { error } = await updateProfile({
       dietary_restrictions: dietaryRestrictions,
-      allergens: allergens
+      allergens: allergens,
+      health_conditions: healthConditions
     })
 
     setIsSaving(false)
@@ -53,7 +64,8 @@ export default function UserPreferences({ isOpen, onClose }: UserPreferencesProp
 
   const hasChanges = 
     JSON.stringify(dietaryRestrictions.sort()) !== JSON.stringify((profile?.dietary_restrictions || []).sort()) ||
-    JSON.stringify(allergens.sort()) !== JSON.stringify((profile?.allergens || []).sort())
+    JSON.stringify(allergens.sort()) !== JSON.stringify((profile?.allergens || []).sort()) ||
+    JSON.stringify(healthConditions.sort()) !== JSON.stringify((profile?.health_conditions || []).sort())
 
   if (!isOpen) return null
 
@@ -148,12 +160,55 @@ export default function UserPreferences({ isOpen, onClose }: UserPreferencesProp
             </div>
           </div>
 
+          {/* Health Conditions - NEW */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Heart className="w-5 h-5 text-rose-600" />
+              <h3 className="font-semibold text-slate-800">Health Conditions</h3>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">
+              Get personalized risk alerts based on your health needs
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {HEALTH_CONDITIONS.map((condition) => (
+                <button
+                  key={condition.id}
+                  onClick={() => toggleHealthCondition(condition.id)}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    healthConditions.includes(condition.id)
+                      ? 'border-rose-500 bg-rose-50'
+                      : 'border-slate-200 hover:border-rose-200 hover:bg-rose-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Activity className={`w-4 h-4 ${
+                        healthConditions.includes(condition.id) ? 'text-rose-600' : 'text-slate-400'
+                      }`} />
+                      <span className={`font-medium text-sm ${
+                        healthConditions.includes(condition.id) ? 'text-rose-700' : 'text-slate-700'
+                      }`}>
+                        {condition.label}
+                      </span>
+                    </div>
+                    {healthConditions.includes(condition.id) && (
+                      <Check className="w-4 h-4 text-rose-600" />
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-500 mt-1 block ml-6">
+                    {condition.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm text-blue-800">
-              <strong>How it works:</strong> When you scan a product, we'll check if it contains 
-              any of your allergens or violates your dietary restrictions and highlight them 
-              prominently in the analysis.
+              <strong>How it works:</strong> When you scan a product, we'll check ingredients 
+              and nutritional data against your preferences. Health conditions trigger 
+              personalized risk alerts (e.g., "⚠️ High sodium - flagged for your blood pressure goal").
             </p>
           </div>
         </div>
@@ -162,7 +217,7 @@ export default function UserPreferences({ isOpen, onClose }: UserPreferencesProp
         <div className="flex-shrink-0 border-t border-slate-200 px-6 py-4 bg-slate-50">
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-500">
-              {dietaryRestrictions.length} restrictions • {allergens.length} allergens
+              {dietaryRestrictions.length} restrictions • {allergens.length} allergens • {healthConditions.length} health conditions
             </div>
             <button
               onClick={handleSave}

@@ -1178,6 +1178,264 @@ function SessionMemory({ memories }: { memories: string[] }) {
 }
 
 // ==========================================
+// PERSONALIZED HEALTH RISK COMPONENTS
+// ==========================================
+
+// Health Risk Alert - Prominent banner for health condition conflicts
+function HealthRiskAlert({ 
+  condition,
+  conditionLabel,
+  risk,
+  reason,
+  nutrientValues,
+  recommendation
+}: { 
+  condition: string
+  conditionLabel: string
+  risk: 'low' | 'medium' | 'high'
+  reason: string
+  nutrientValues?: Array<{ name: string; value: number; unit: string; threshold: number }>
+  recommendation: string
+}) {
+  const riskConfig = {
+    high: {
+      bg: 'bg-gradient-to-r from-red-50 to-rose-50',
+      border: 'border-red-300',
+      iconBg: 'bg-red-100',
+      iconColor: 'text-red-600',
+      badgeBg: 'bg-red-500',
+      titleColor: 'text-red-800',
+      emoji: '🚨'
+    },
+    medium: {
+      bg: 'bg-gradient-to-r from-amber-50 to-orange-50',
+      border: 'border-amber-300',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600',
+      badgeBg: 'bg-amber-500',
+      titleColor: 'text-amber-800',
+      emoji: '⚠️'
+    },
+    low: {
+      bg: 'bg-gradient-to-r from-blue-50 to-sky-50',
+      border: 'border-blue-200',
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-600',
+      badgeBg: 'bg-blue-500',
+      titleColor: 'text-blue-800',
+      emoji: 'ℹ️'
+    }
+  }
+
+  const config = riskConfig[risk] || riskConfig.medium
+
+  return (
+    <div className={`${config.bg} ${config.border} border-2 rounded-xl p-4 my-4`}>
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-lg ${config.iconBg} flex items-center justify-center flex-shrink-0`}>
+          <Heart className={`w-5 h-5 ${config.iconColor}`} />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">{config.emoji}</span>
+            <span className={`${config.badgeBg} text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase`}>
+              {risk} risk
+            </span>
+            <span className={`font-semibold text-sm ${config.titleColor}`}>
+              Flagged for {conditionLabel}
+            </span>
+          </div>
+          <p className="text-sm text-slate-700 mb-2">{reason}</p>
+          
+          {/* Nutrient values breakdown */}
+          {nutrientValues && nutrientValues.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {nutrientValues.map((nv, i) => (
+                <div 
+                  key={i} 
+                  className={`px-2 py-1 rounded-lg text-xs ${
+                    nv.value >= nv.threshold * 1.5 
+                      ? 'bg-red-100 text-red-700' 
+                      : nv.value >= nv.threshold 
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {nv.name}: <span className="font-bold">{nv.value}{nv.unit}</span>
+                  <span className="text-xs opacity-70"> (limit: {nv.threshold}{nv.unit})</span>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex items-center gap-2 text-sm">
+            <ArrowRight className={`w-4 h-4 ${config.iconColor}`} />
+            <span className="font-medium text-slate-700">{recommendation}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Health Risk Alerts Container - Groups multiple health condition alerts
+function HealthRiskAlerts({ 
+  alerts 
+}: { 
+  alerts: Array<{
+    condition: string
+    conditionLabel: string
+    risk: 'low' | 'medium' | 'high'
+    reason: string
+    nutrientValues?: Array<{ name: string; value: number; unit: string; threshold: number }>
+    recommendation: string
+  }> 
+}) {
+  if (!alerts || alerts.length === 0) return null
+  
+  return (
+    <div className="my-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Heart className="w-5 h-5 text-rose-500" />
+        <h4 className="font-semibold text-slate-800 text-sm">Personalized Health Alerts</h4>
+      </div>
+      {alerts.map((alert, i) => (
+        <HealthRiskAlert key={i} {...alert} />
+      ))}
+    </div>
+  )
+}
+
+// Alternative Product Card - Single healthier alternative
+function AlternativeProductCard({ 
+  barcode,
+  name,
+  brand,
+  nutriScore,
+  novaGroup,
+  whyBetter,
+  imageUrl
+}: {
+  barcode: string
+  name: string
+  brand: string | null
+  nutriScore: string | null
+  novaGroup: number | null
+  whyBetter: string[]
+  imageUrl: string | null
+}) {
+  const handlers = useActionHandlers()
+  
+  const getNutriColor = (score: string) => {
+    const colors: Record<string, string> = {
+      a: 'bg-emerald-500',
+      b: 'bg-lime-500',
+      c: 'bg-yellow-500',
+      d: 'bg-orange-500',
+      e: 'bg-red-500'
+    }
+    return colors[score.toLowerCase()] || 'bg-slate-400'
+  }
+
+  const getNovaColor = (nova: number) => {
+    const colors: Record<number, string> = {
+      1: 'bg-emerald-500',
+      2: 'bg-lime-500',
+      3: 'bg-yellow-500',
+      4: 'bg-red-500'
+    }
+    return colors[nova] || 'bg-slate-400'
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 hover:border-emerald-300 hover:shadow-md transition-all">
+      <div className="flex items-start gap-3">
+        {imageUrl && (
+          <div className="w-16 h-16 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
+            <img src={imageUrl} alt={name} className="w-full h-full object-contain" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h5 className="font-semibold text-slate-800 text-sm truncate">{name}</h5>
+          {brand && <p className="text-xs text-slate-500">{brand}</p>}
+          
+          <div className="flex items-center gap-2 mt-2">
+            {nutriScore && (
+              <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNutriColor(nutriScore)}`}>
+                {nutriScore.toUpperCase()}
+              </span>
+            )}
+            {novaGroup && (
+              <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNovaColor(novaGroup)}`}>
+                NOVA {novaGroup}
+              </span>
+            )}
+          </div>
+          
+          {whyBetter && whyBetter.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {whyBetter.slice(0, 2).map((reason, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs text-emerald-700">
+                  <CheckCircle className="w-3 h-3" />
+                  <span>{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <button
+        onClick={() => handlers.onAskQuestion?.(`Analyze barcode ${barcode}`)}
+        className="w-full mt-3 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-sm font-medium text-emerald-700 transition-colors flex items-center justify-center gap-2"
+      >
+        <Scan className="w-4 h-4" />
+        View Analysis
+      </button>
+    </div>
+  )
+}
+
+// Alternative Products Container - Shows healthier alternatives
+function AlternativeProducts({ 
+  category,
+  alternatives
+}: { 
+  category?: string
+  alternatives: Array<{
+    barcode: string
+    name: string
+    brand: string | null
+    nutriScore: string | null
+    novaGroup: number | null
+    whyBetter: string[]
+    imageUrl: string | null
+  }>
+}) {
+  if (!alternatives || alternatives.length === 0) return null
+  
+  return (
+    <div className="my-6">
+      <div className="flex items-center gap-2 mb-3">
+        <TrendingUp className="w-5 h-5 text-emerald-600" />
+        <h4 className="font-semibold text-slate-800">Healthier Alternatives</h4>
+        {category && (
+          <span className="text-xs text-slate-500">in {category}</span>
+        )}
+      </div>
+      <p className="text-sm text-slate-600 mb-4">
+        Consider these options with better nutritional profiles:
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {alternatives.map((alt, i) => (
+          <AlternativeProductCard key={i} {...alt} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ==========================================
 // NATIVE THESYS SDK COMPONENTS
 // ==========================================
 
@@ -1586,6 +1844,30 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <WhyAINativeButton />
     case 'WhyAINativeModal':
       return <WhyAINativeModal isOpen={props.isOpen} onClose={props.onClose} />
+    // PERSONALIZED HEALTH COMPONENTS
+    case 'HealthRiskAlert':
+      return <HealthRiskAlert 
+        condition={props.condition || ''} 
+        conditionLabel={props.conditionLabel || ''} 
+        risk={props.risk || 'medium'} 
+        reason={props.reason || ''} 
+        recommendation={props.recommendation || ''} 
+        nutrientValues={props.nutrientValues}
+      />
+    case 'HealthRiskAlerts':
+      return <HealthRiskAlerts alerts={props.alerts || []} />
+    case 'AlternativeProductCard':
+      return <AlternativeProductCard 
+        barcode={props.barcode || ''} 
+        name={props.name || ''} 
+        brand={props.brand || null} 
+        nutriScore={props.nutriScore || null} 
+        novaGroup={props.novaGroup || null} 
+        whyBetter={props.whyBetter || []} 
+        imageUrl={props.imageUrl || null}
+      />
+    case 'AlternativeProducts':
+      return <AlternativeProducts alternatives={props.alternatives || []} category={props.category} />
     default:
       console.warn(`Unknown Thesys component: ${type}`)
       return <div className="text-red-500">Unknown component: {type}</div>

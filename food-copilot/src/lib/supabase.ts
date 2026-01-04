@@ -158,6 +158,7 @@ export interface UserProfile {
   display_name: string | null
   dietary_restrictions: string[]
   allergens: string[]
+  health_conditions: string[]
   created_at: string
   updated_at: string
 }
@@ -207,6 +208,48 @@ export const COMMON_ALLERGENS = [
   { id: 'mollusks', label: 'Mollusks', examples: 'clams, mussels, oysters' },
 ] as const
 
+// Health conditions for personalized risk alerts
+export const HEALTH_CONDITIONS = [
+  { 
+    id: 'diabetes', 
+    label: 'Diabetes', 
+    description: 'Monitor blood sugar impact',
+    icon: 'activity',
+    riskNutrients: ['sugars', 'carbohydrates'],
+    thresholds: { sugars: 5, carbohydrates: 15 }, // per 100g warning thresholds
+    keywords: ['sugar', 'glucose', 'fructose', 'sucrose', 'dextrose', 'maltose', 'corn syrup', 'honey', 'agave', 'high fructose']
+  },
+  { 
+    id: 'hypertension', 
+    label: 'Hypertension', 
+    description: 'Monitor sodium intake',
+    icon: 'heart',
+    riskNutrients: ['sodium', 'salt'],
+    thresholds: { sodium: 400 }, // mg per 100g warning threshold
+    keywords: ['sodium', 'salt', 'msg', 'monosodium glutamate', 'soy sauce', 'brine', 'sodium chloride']
+  },
+  { 
+    id: 'heart-disease', 
+    label: 'Heart Disease', 
+    description: 'Monitor saturated fats & cholesterol',
+    icon: 'heart',
+    riskNutrients: ['saturated-fat', 'cholesterol', 'trans-fat'],
+    thresholds: { 'saturated-fat': 5, cholesterol: 20 }, // per 100g warning thresholds
+    keywords: ['saturated fat', 'trans fat', 'hydrogenated', 'palm oil', 'coconut oil', 'lard', 'butter', 'cream']
+  },
+  { 
+    id: 'high-cholesterol', 
+    label: 'High Cholesterol', 
+    description: 'Limit cholesterol & saturated fats',
+    icon: 'trending-up',
+    riskNutrients: ['cholesterol', 'saturated-fat'],
+    thresholds: { cholesterol: 20, 'saturated-fat': 5 },
+    keywords: ['cholesterol', 'egg yolk', 'liver', 'shellfish', 'saturated fat', 'hydrogenated']
+  },
+] as const
+
+export type HealthConditionId = typeof HEALTH_CONDITIONS[number]['id']
+
 // Get user profile
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   const { data, error } = await supabase
@@ -225,7 +268,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 // Update user profile
 export async function updateUserProfile(
   userId: string,
-  updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens'>>
+  updates: Partial<Pick<UserProfile, 'display_name' | 'dietary_restrictions' | 'allergens' | 'health_conditions'>>
 ): Promise<UserProfile | null> {
   const { data, error } = await supabase
     .from('user_profiles')

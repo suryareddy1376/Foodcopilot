@@ -161,3 +161,122 @@ export async function addProductToOFF(
     return { success: false, error: String(error) }
   }
 }
+
+// =====================================================
+// HEALTHIER ALTERNATIVES SEARCH
+// =====================================================
+
+export interface AlternativeProduct {
+  barcode: string
+  name: string
+  brand: string | null
+  nutriScore: string | null
+  novaGroup: number | null
+  whyBetter: string[]
+  imageUrl: string | null
+}
+
+// NutriScore ranking for comparison (A is best, E is worst)
+const NUTRI_SCORE_RANK: Record<string, number> = { 'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5 }
+
+export async function searchAlternatives(
+  categories: string[],
+  currentNutriScore: string | null,
+  currentNovaGroup: number | null,
+  currentBarcode: string,
+  limit: number = 3
+): Promise<AlternativeProduct[]> {
+  try {
+    if (!categories || categories.length === 0) {
+      return []
+    }
+
+    // Get the most specific category (usually the last one)
+    // Categories are like: ['en:snacks', 'en:sweet-snacks', 'en:biscuits', 'en:chocolate-biscuits']
+    const category = categories[Math.min(categories.length - 1, 2)]
+      .replace('en:', '')
+      .replace(/-/g, ' ')
+
+    // Search in the category, sorted by nutrition grade
+    const response = await fetch(
+      `https://world.openfoodfacts.org/cgi/search.pl?` +
+      `search_terms=${encodeURIComponent(category)}&` +
+      `sort_by=nutrition_grade_fr&` +
+      `page_size=20&` +
+      `json=1`,
+      {
+        headers: {
+          'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)'
+        }
+      }
+    )
+
+    if (!response.ok) return []
+
+    const data = await response.json()
+    const products: OpenFoodFactsProduct[] = data.products || []
+
+    // Filter and rank alternatives
+    const alternatives: AlternativeProduct[] = []
+    const currentNutriRank = currentNutriScore ? NUTRI_SCORE_RANK[currentNutriScore.toLowerCase()] || 5 : 5
+    const currentNova = currentNovaGroup || 4
+
+    for (const product of products) {
+      // Skip the same product
+      if (product.code === currentBarcode) continue
+      
+      // Skip products without names or nutriscore
+      if (!product.product_name || !product.nutriscore_grade) continue
+
+      const productNutriRank = NUTRI_SCORE_RANK[product.nutriscore_grade.toLowerCase()] || 5
+      const productNova = product.nova_group || 4
+
+      // Only include if it's better in at least one metric
+      const betterNutri = productNutriRank < currentNutriRank
+      const betterNova = productNova < currentNova
+      const sameOrBetterNutri = productNutriRank <= currentNutriRank
+      const sameOrBetterNova = productNova <= currentNova
+
+      if ((betterNutri && sameOrBetterNova) || (betterNova && sameOrBetterNutri)) {
+        const whyBetter: string[] = []
+        
+        if (betterNutri) {
+          whyBetter.push(`Better NutriScore (${product.nutriscore_grade.toUpperCase()} vs ${currentNutriScore?.toUpperCase() || '?'})`)
+        }
+        if (betterNova) {
+          whyBetter.push(`Less processed (NOVA ${productNova} vs ${currentNova})`)
+        }
+        
+        // Add specific nutrient comparisons if available
+        if (product.nutriments) {
+          if (product.nutriments.sugars_100g !== undefined && product.nutriments.sugars_100g < 5) {
+            whyBetter.push('Low sugar')
+          }
+          if (product.nutriments.sodium_100g !== undefined && product.nutriments.sodium_100g < 0.3) {
+            whyBetter.push('Low sodium')
+          }
+          if (product.nutriments['saturated-fat_100g'] !== undefined && product.nutriments['saturated-fat_100g'] < 1.5) {
+            whyBetter.push('Low saturated fat')
+          }
+        }
+
+        alternatives.push({
+          barcode: product.code,
+          name: product.product_name,
+          brand: product.brands || null,
+          nutriScore: product.nutriscore_grade,
+          novaGroup: product.nova_group || null,
+          whyBetter,
+          imageUrl: product.image_url || null
+        })
+
+        if (alternatives.length >= limit) break
+      }
+    }
+
+    return alternatives
+  } catch (error) {
+    console.error('Error searching alternatives:', error)
+    return []
+  }
+}

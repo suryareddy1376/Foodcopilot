@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { fetchProductFromOFF, transformOFFProduct } from '@/lib/openfoodfacts'
-import { detectSignals, UserPreferences, UserConflict } from '@/lib/signals'
+import { fetchProductFromOFF, transformOFFProduct, searchAlternatives, AlternativeProduct } from '@/lib/openfoodfacts'
+import { detectSignals, detectHealthConditionRisks, UserPreferences, UserConflict, HealthConditionRisk } from '@/lib/signals'
 import { getCachedProduct, upsertProduct, createReasoningSession } from '@/lib/supabase'
 
 const client = new OpenAI({
@@ -17,7 +17,9 @@ async function getAIAnalysis(
   novaGroup?: number, 
   nutriScore?: string,
   userConflicts?: UserConflict[],
-  userPreferences?: UserPreferences | null
+  userPreferences?: UserPreferences | null,
+  healthConditionRisks?: HealthConditionRisk[],
+  alternatives?: AlternativeProduct[]
 ): Promise<string> {
   const signalSummary = signals.signals.length > 0
     ? `Detected signals:\n${signals.signals.map((s: any) => `- ${s.type}: ${s.message}`).join('\n')}`
@@ -35,10 +37,25 @@ async function getAIAnalysis(
       ).join('\n')}`
     : ''
 
-  const userDietInfo = userPreferences && (userPreferences.dietary_restrictions.length > 0 || userPreferences.allergens.length > 0)
-    ? `\nUser's dietary profile:
-- Restrictions: ${userPreferences.dietary_restrictions.join(', ') || 'None'}
-- Allergens to avoid: ${userPreferences.allergens.join(', ') || 'None'}`
+  // Health condition risks section
+  const healthRisksSummary = healthConditionRisks && healthConditionRisks.length > 0
+    ? `\n🏥 HEALTH CONDITION ALERTS (INCLUDE HealthRiskAlerts COMPONENT):\n${healthConditionRisks.map(r => 
+        `- ${r.risk.toUpperCase()} RISK for ${r.conditionLabel}: ${r.reason}\n  Recommendation: ${r.recommendation}`
+      ).join('\n')}`
+    : ''
+
+  // Alternatives section  
+  const alternativesSummary = alternatives && alternatives.length > 0
+    ? `\n💡 HEALTHIER ALTERNATIVES FOUND (INCLUDE AlternativeProducts COMPONENT):\n${alternatives.map(a => 
+        `- ${a.name}${a.brand ? ` by ${a.brand}` : ''} (NutriScore: ${a.nutriScore?.toUpperCase() || '?'}, NOVA: ${a.novaGroup || '?'})\n  Why better: ${a.whyBetter.join(', ')}`
+      ).join('\n')}`
+    : ''
+
+  const userDietInfo = userPreferences && (userPreferences.dietary_restrictions.length > 0 || userPreferences.allergens.length > 0 || (userPreferences.health_conditions && userPreferences.health_conditions.length > 0))
+    ? `\nUser's health profile:
+- Dietary restrictions: ${userPreferences.dietary_restrictions.join(', ') || 'None'}
+- Allergens to avoid: ${userPreferences.allergens.join(', ') || 'None'}
+- Health conditions: ${userPreferences.health_conditions?.join(', ') || 'None'}`
     : ''
 
   // Determine confidence level based on data completeness
@@ -89,11 +106,13 @@ NutriScore: ${nutriScore || 'Unknown'}
 ${userDietInfo}
 ${signalSummary}
 ${userConflictsSummary}
+${healthRisksSummary}
+${alternativesSummary}
 ${flaggedAdditiveSummary ? `Additives of note:\n${flaggedAdditiveSummary}` : ''}
 
 DATA QUALITY: Confidence ${confidenceLevel} - ${confidenceReason}
 
-REQUIRED OUTPUT STRUCTURE (use these new components in this order):
+REQUIRED OUTPUT STRUCTURE (use these components in this order):
 
 1. **AIInterpretationLabel** - Start with this to label the response as AI interpretation
    {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
@@ -107,10 +126,15 @@ REQUIRED OUTPUT STRUCTURE (use these new components in this order):
 4. **ConfidenceIndicator** - Show data confidence level
    {"component": "ConfidenceIndicator", "props": {"level": "${confidenceLevel}", "reason": "${confidenceReason}"}}
 
-5. **SessionMemory** (if user has remembered preferences from session) - Show remembered preferences
+5. **HealthRiskAlerts** (IF health condition risks detected) - Show personalized health alerts
+   {"component": "HealthRiskAlerts", "props": {"alerts": [
+     {"condition": "diabetes", "conditionLabel": "Diabetes", "risk": "high", "reason": "Contains 25g sugars per serving", "recommendation": "Consider sugar-free alternatives"}
+   ]}}
+
+6. **SessionMemory** (if user has remembered preferences from session) - Show remembered preferences
    {"component": "SessionMemory", "props": {"memories": ["user preference 1", "user preference 2"]}}
 
-6. **ReasoningBlocks** - Structured thinking with these block types:
+7. **ReasoningBlocks** - Structured thinking with these block types:
    {"component": "ReasoningBlocks", "props": {"blocks": [
      {"type": "thinking", "content": "What matters to you about this product..."},
      {"type": "why-matters", "content": "This is significant because..."},
@@ -119,7 +143,7 @@ REQUIRED OUTPUT STRUCTURE (use these new components in this order):
      {"type": "bottom-line", "content": "The key takeaway is..."}
    ]}}
 
-7. **DecisionVerdict** - Clear verdict card (REQUIRED)
+8. **DecisionVerdict** - Clear verdict card (REQUIRED)
    {"component": "DecisionVerdict", "props": {
      "verdict": "safe|occasional|avoid",
      "summary": "One sentence explaining the verdict"
@@ -128,13 +152,21 @@ REQUIRED OUTPUT STRUCTURE (use these new components in this order):
    - Use "occasional" (🟡) for ultra-processed but not harmful
    - Use "avoid" (🔴) only for genuine health concerns
 
-8. **UncertaintyDisclosure** - What we don't know
+9. **UncertaintyDisclosure** - What we don't know
    {"component": "UncertaintyDisclosure", "props": {"items": [
      "Exact ingredient quantities aren't disclosed",
      "Assessment assumes typical industry usage"
    ]}}
 
-9. **MomentQuestion** - One contextual clarification
+10. **AlternativeProducts** (IF alternatives provided) - Show healthier alternatives
+   {"component": "AlternativeProducts", "props": {
+     "category": "snacks",
+     "alternatives": [
+       {"barcode": "123", "name": "Product X", "brand": "Brand Y", "nutriScore": "A", "novaGroup": 1, "whyBetter": ["50% less sugar", "Better NutriScore"], "imageUrl": null}
+     ]
+   }}
+
+11. **MomentQuestion** - One contextual clarification
    {"component": "MomentQuestion", "props": {
      "question": "Is this for daily use or occasional treat?",
      "options": [
@@ -143,14 +175,16 @@ REQUIRED OUTPUT STRUCTURE (use these new components in this order):
      ]
    }}
 
-10. **SuggestionChips** at the end for follow-up questions
+12. **SuggestionChips** at the end for follow-up questions
 
 IMPORTANT GUIDELINES:
 - Always infer user intent upfront - don't ask questions first
 - Be honest about uncertainty - OpenFoodFacts data can be incomplete
 - The verdict must be clear and actionable
 - Include ALL reasoning blocks to show your thinking
-- Label everything as interpretation, not raw data display`
+- Label everything as interpretation, not raw data display
+- IF health condition risks are detected, ALWAYS include HealthRiskAlerts component
+- IF healthier alternatives are available, ALWAYS include AlternativeProducts component`
 
   const THESYS_SYSTEM = `You are a health co-pilot that analyzes food products. You MUST respond with Thesys Generative UI JSON format only.
 
@@ -176,7 +210,12 @@ Your response must be a valid JSON object with this exact structure:
 3. ConfidenceIndicator - Show assessment confidence
    {"component": "ConfidenceIndicator", "props": {"level": "high|medium|low", "reason": "Why this confidence level"}}
 
-4. ReasoningBlocks - Structured thinking sections
+4. HealthRiskAlerts - Personalized health condition alerts (USE IF HEALTH RISKS DETECTED)
+   {"component": "HealthRiskAlerts", "props": {"alerts": [
+     {"condition": "diabetes", "conditionLabel": "Diabetes", "risk": "high|medium|low", "reason": "Contains 25g sugars", "recommendation": "Consider sugar-free alternatives"}
+   ]}}
+
+5. ReasoningBlocks - Structured thinking sections
    {"component": "ReasoningBlocks", "props": {"blocks": [
      {"type": "thinking", "content": "What I think you care about..."},
      {"type": "why-matters", "content": "Why this matters..."},
@@ -185,19 +224,24 @@ Your response must be a valid JSON object with this exact structure:
      {"type": "bottom-line", "content": "The key decision point..."}
    ]}}
 
-5. DecisionVerdict - REQUIRED bold decision card
+6. DecisionVerdict - REQUIRED bold decision card
    {"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "Clear explanation"}}
    - safe (🟢): Safe for daily use
    - occasional (🟡): Okay occasionally
    - avoid (🔴): Avoid if health-conscious
 
-6. UncertaintyDisclosure - What we don't know
+7. UncertaintyDisclosure - What we don't know
    {"component": "UncertaintyDisclosure", "props": {"items": ["Unknown 1", "Unknown 2"]}}
 
-7. MomentQuestion - One contextual clarification (NOT asking first, but offering to refine)
+8. AlternativeProducts - Healthier alternatives (USE IF ALTERNATIVES PROVIDED)
+   {"component": "AlternativeProducts", "props": {"category": "snacks", "alternatives": [
+     {"barcode": "123", "name": "Product X", "brand": "Brand Y", "nutriScore": "A", "novaGroup": 1, "whyBetter": ["50% less sugar"], "imageUrl": null}
+   ]}}
+
+9. MomentQuestion - One contextual clarification (NOT asking first, but offering to refine)
    {"component": "MomentQuestion", "props": {"question": "...", "options": [{"label": "...", "query": "..."}]}}
 
-8. SessionMemory - Show remembered preferences
+10. SessionMemory - Show remembered preferences
    {"component": "SessionMemory", "props": {"memories": ["prefers natural", "avoids additives"]}}
 
 === EXISTING COMPONENTS ===
@@ -209,8 +253,10 @@ CRITICAL RULES:
 3. ALWAYS include DecisionVerdict with clear safe/occasional/avoid
 4. ALWAYS include ReasoningBlocks showing your thinking
 5. ALWAYS include UncertaintyDisclosure
-6. Add MomentQuestion for context refinement AFTER giving verdict
-7. Output ONLY valid JSON. No markdown, no text before or after.`
+6. IF health condition risks are provided, ALWAYS include HealthRiskAlerts component
+7. IF alternatives are provided, ALWAYS include AlternativeProducts component  
+8. Add MomentQuestion for context refinement AFTER giving verdict
+9. Output ONLY valid JSON. No markdown, no text before or after.`
 
   try {
     const completion = await client.chat.completions.create({
@@ -239,10 +285,11 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const dietaryRestrictions = searchParams.get('dietary')?.split(',').filter(Boolean) || []
   const allergens = searchParams.get('allergens')?.split(',').filter(Boolean) || []
+  const healthConditions = searchParams.get('health')?.split(',').filter(Boolean) || []
   
   const userPreferences: UserPreferences | null = 
-    (dietaryRestrictions.length > 0 || allergens.length > 0)
-      ? { dietary_restrictions: dietaryRestrictions, allergens }
+    (dietaryRestrictions.length > 0 || allergens.length > 0 || healthConditions.length > 0)
+      ? { dietary_restrictions: dietaryRestrictions, allergens, health_conditions: healthConditions }
       : null
 
   // Validate barcode format
@@ -293,23 +340,49 @@ export async function GET(
       userPreferences
     )
 
+    // Step 3.5: Detect health condition risks
+    const healthConditionRisks = userPreferences?.health_conditions 
+      ? detectHealthConditionRisks(
+          nutritionFacts.nutriments || null,
+          product.ingredients_text,
+          userPreferences.health_conditions
+        )
+      : []
+
+    // Step 3.6: Search for healthier alternatives (in parallel with AI)
+    const categoriesTags = nutritionFacts.categories || []
+    const alternativesPromise = categoriesTags.length > 0
+      ? searchAlternatives(
+          categoriesTags,
+          nutritionFacts.nutriscore || null,
+          nutritionFacts.nova_group || null,
+          barcode,
+          3
+        )
+      : Promise.resolve([])
+
     // Step 4: Get AI analysis using Thesys C1
-    const aiResult = await getAIAnalysis(
-      product.product_name || 'Unknown product',
-      product.brand,
-      product.ingredients_text,
-      signals,
-      nutritionFacts.nova_group,
-      nutritionFacts.nutriscore,
-      signals.userConflicts,
-      userPreferences
-    )
+    const [aiResult, alternatives] = await Promise.all([
+      getAIAnalysis(
+        product.product_name || 'Unknown product',
+        product.brand,
+        product.ingredients_text,
+        signals,
+        nutritionFacts.nova_group,
+        nutritionFacts.nutriscore,
+        signals.userConflicts,
+        userPreferences,
+        healthConditionRisks,
+        await alternativesPromise
+      ),
+      alternativesPromise
+    ])
 
     // Step 5: Store reasoning session (non-blocking)
     if (product.id !== 'temp') {
       createReasoningSession({
         product_id: product.id,
-        detected_signals_json: { signals: signals.signals, flagged: signals.flaggedAdditives },
+        detected_signals_json: { signals: signals.signals, flagged: signals.flaggedAdditives, healthRisks: healthConditionRisks },
         ai_explanation: aiResult,
         uncertainty_notes: signals.summary.hasDebatedIngredients 
           ? 'Contains ingredients under ongoing scientific review'
@@ -329,12 +402,16 @@ export async function GET(
       },
       signals: signals.signals,
       userConflicts: signals.userConflicts,
+      healthConditionRisks,
+      alternatives,
       analysis: aiResult,
       meta: {
         cached: !offProduct,
         signals_detected: signals.signals.length,
         additives_flagged: signals.flaggedAdditives.filter(a => a.concern !== 'none').length,
         user_conflicts: signals.userConflicts.length,
+        health_risks: healthConditionRisks.length,
+        alternatives_found: alternatives.length,
         personalized: !!userPreferences
       }
     })
