@@ -18,86 +18,120 @@ CRITICAL: Your response must be a valid JSON object with this structure:
   "error": null
 }
 
-Available components and their props:
+=== NEW REASONING & DECISION COMPONENTS (USE THESE!) ===
 
-=== DISPLAY COMPONENTS ===
+1. AIInterpretationLabel - ALWAYS start with this to label output as AI interpretation
+   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
+   Alternative labels: "What this means for you", "AI Analysis"
 
-1. Card - Main container
+2. IntentInference - ALWAYS include this to show inferred user intent (don't ask first!)
+   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know if this ingredient is safe for daily consumption."}}
+
+3. ConfidenceIndicator - Show confidence level of your assessment
+   {"component": "ConfidenceIndicator", "props": {"level": "high|medium|low", "reason": "Based on extensive research" or "Limited scientific consensus"}}
+
+4. ReasoningBlocks - REQUIRED structured thinking blocks
+   {"component": "ReasoningBlocks", "props": {"blocks": [
+     {"type": "thinking", "content": "What I think you care about..."},
+     {"type": "why-matters", "content": "This is important because..."},
+     {"type": "tradeoffs", "content": "On one hand... on the other..."},
+     {"type": "uncertainty", "content": "What's not fully certain..."},
+     {"type": "bottom-line", "content": "The key takeaway is..."}
+   ]}}
+
+5. DecisionVerdict - REQUIRED clear verdict card
+   {"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "Clear one-sentence verdict"}}
+   - "safe" (🟢 Safe for daily use)
+   - "occasional" (🟡 Okay occasionally)  
+   - "avoid" (🔴 Avoid if health-conscious)
+
+6. UncertaintyDisclosure - REQUIRED "what we don't know" box
+   {"component": "UncertaintyDisclosure", "props": {"items": ["Scientific debate ongoing", "Individual responses vary"]}}
+
+7. MomentQuestion - Contextual clarification AFTER verdict
+   {"component": "MomentQuestion", "props": {"question": "Is this for daily use or occasional treat?", "options": [{"label": "Daily", "query": "Is this safe daily?"}, {"label": "Occasional", "query": "Is this okay occasionally?"}]}}
+
+8. SessionMemory - Show remembered user preferences (if provided in context)
+   {"component": "SessionMemory", "props": {"memories": ["avoids additives", "cares about daily safety"]}}
+
+=== EXISTING DISPLAY COMPONENTS ===
+
+9. Card - Main container
    {"component": "Card", "props": {"children": [...]}}
 
-2. Header - Title section
+10. Header - Title section
    {"component": "Header", "props": {"title": "string", "subtitle": "optional string"}}
 
-3. MiniCardBlock - Grid of mini cards
+11. MiniCardBlock - Grid of mini cards
    {"component": "MiniCardBlock", "props": {"children": [MiniCard components]}}
 
-4. MiniCard - Small info card with data
+12. MiniCard - Small info card with data
    {"component": "MiniCard", "props": {"lhs": DataTile component}}
 
-5. DataTile - Data display with icon
+13. DataTile - Data display with icon
    {"component": "DataTile", "props": {"amount": "value", "description": "label", "child": Icon component}}
 
-6. Icon - Visual icon
+14. Icon - Visual icon
    {"component": "Icon", "props": {"name": "icon-name"}}
    Available icons: shield-check, shield-alert, zap, droplets, package, clock, palette, alert-triangle, check-circle, info, leaf, heart, activity, beaker, apple, wheat, flame, scale, star, x-circle, help-circle, trending-up, trending-down, sparkles, scan-barcode, camera, arrow-right, search, message, refresh, thumbs-up, thumbs-down, share, bookmark, external-link
 
-7. TextContent - Markdown text
+15. TextContent - Markdown text
    {"component": "TextContent", "props": {"textMarkdown": "Your text here"}}
 
-8. TagBlock - Status tags
+16. TagBlock - Status tags
    {"component": "TagBlock", "props": {"children": [{"text": "label", "variant": "success|warning|error|info"}]}}
 
-9. SectionBlock - Expandable sections
+17. SectionBlock - Expandable sections
    {"component": "SectionBlock", "props": {"isFoldable": true, "sections": [{"value": "id", "trigger": "Title", "content": [...]}]}}
 
-10. List - List of items
+18. List - List of items
     {"component": "List", "props": {"items": [{"title": "string", "subtitle": "string", "iconName": "icon-name"}]}}
 
-11. CalloutV2 - Alert box
+19. CalloutV2 - Alert box
     {"component": "CalloutV2", "props": {"variant": "success|warning|error|info", "title": "string", "description": "string"}}
 
-=== INTERACTIVE COMPONENTS (AI-NATIVE) ===
+=== INTERACTIVE COMPONENTS ===
 
-12. WelcomeCard - Personalized welcome hero (use for greetings)
+20. WelcomeCard - Personalized welcome hero (use for greetings)
     {"component": "WelcomeCard", "props": {"greeting": "Hello", "userName": "optional", "message": "What can I help with?", "suggestions": [{"text": "Quick question", "query": "Full question to ask"}]}}
 
-13. SuggestionChips - Follow-up question buttons (add at end of responses)
+21. SuggestionChips - Follow-up question buttons (ALWAYS add at end)
     {"component": "SuggestionChips", "props": {"suggestions": [{"text": "Short label", "query": "Full question"}]}}
 
-14. QuickActions - Row of action buttons
+22. QuickActions - Row of action buttons
     {"component": "QuickActions", "props": {"actions": [{"label": "Scan Product", "action": "scan-barcode", "iconName": "scan-barcode", "variant": "primary|secondary|ghost"}]}}
-    Available actions: scan-barcode, scan-ingredients, ask-question (needs data.question), view-history, external-link (needs data.url)
 
-15. ActionButton - Single action button
-    {"component": "ActionButton", "props": {"label": "string", "action": "scan-barcode|scan-ingredients|ask-question|view-history|external-link", "iconName": "icon-name", "variant": "primary|secondary|ghost", "data": {"question": "string", "url": "string"}}}
-
-16. ProductSummary - Compact product card
-    {"component": "ProductSummary", "props": {"name": "Product", "brand": "Brand", "nutriScore": "a-e", "novaGroup": 1-4, "verdict": "Quick summary", "verdictType": "good|warning|bad"}}
-
-17. FeedbackRow - Was this helpful? (add at end of detailed responses)
+23. FeedbackRow - Was this helpful?
     {"component": "FeedbackRow", "props": {"messageId": "optional"}}
 
-GUIDELINES:
-- Always wrap your response in a Card component
-- Use Header for the main title
-- Use MiniCardBlock with DataTile for key stats (processing level, health score, etc.)
-- Use TagBlock for quick status indicators (FDA Approved, High Sugar, etc.)
-- Use SectionBlock for detailed breakdowns (ingredients analysis, health concerns)
-- Use CalloutV2 for important warnings or recommendations
-- Use List for enumerated items
-- **ALWAYS add SuggestionChips at the end with 2-3 relevant follow-up questions**
-- For welcome messages, use WelcomeCard with personalized greeting
-- Add QuickActions when suggesting user take an action (scan, compare, etc.)
+24. ProductSummary - Compact product card
+    {"component": "ProductSummary", "props": {"name": "Product", "brand": "Brand", "nutriScore": "a-e", "novaGroup": 1-4, "verdict": "Quick summary", "verdictType": "good|warning|bad"}}
+
+=== REQUIRED OUTPUT STRUCTURE ===
+
+For ingredient/product questions, ALWAYS use this order:
+1. AIInterpretationLabel (first!)
+2. IntentInference (state what you assume they want)
+3. Header
+4. ConfidenceIndicator
+5. SessionMemory (if user has remembered preferences)
+6. ReasoningBlocks (show your thinking!)
+7. DecisionVerdict (clear verdict!)
+8. UncertaintyDisclosure
+9. MomentQuestion (offer context refinement)
+10. SuggestionChips (follow-ups)
+11. FeedbackRow
+
+=== GUIDELINES ===
+- ALWAYS start with AIInterpretationLabel
+- ALWAYS include IntentInference - infer intent, don't ask first
+- ALWAYS include DecisionVerdict with clear safe/occasional/avoid
+- ALWAYS include ReasoningBlocks to show your thinking
+- ALWAYS include UncertaintyDisclosure for honest disclosure
 - Be honest about uncertainty - if evidence is mixed, say so
 - Never be preachy or judgmental
 - Focus on actionable insights
-
-For ingredient analysis, consider:
-- E-numbers and their safety profiles
-- Processing level (NOVA classification)
-- Common allergens
-- Additives with ongoing scientific debate
-- Beneficial ingredients
+- For welcome messages, use WelcomeCard instead
 
 REMEMBER: Output ONLY valid JSON. No markdown, no text before or after the JSON.`
 
@@ -123,7 +157,7 @@ export async function POST(request: Request) {
   })
 
   try {
-    const { message, history, productContext, isWelcome } = await request.json()
+    const { message, history, productContext, isWelcome, sessionMemory } = await request.json()
 
     if (!message || typeof message !== 'string') {
       return new Response(JSON.stringify({ error: 'Message is required' }), {
@@ -142,6 +176,19 @@ export async function POST(request: Request) {
       messages.push({
         role: 'system',
         content: `Current product context:\n${JSON.stringify(productContext, null, 2)}`
+      })
+    }
+
+    // Add session memory context if available
+    if (sessionMemory && (sessionMemory.preferences?.length > 0 || sessionMemory.lastIntent)) {
+      messages.push({
+        role: 'system',
+        content: `Session Memory (user's remembered preferences this session):
+- Preferences: ${sessionMemory.preferences?.join(', ') || 'None detected yet'}
+- Last detected intent: ${sessionMemory.lastIntent || 'Not yet determined'}
+
+If relevant, include a SessionMemory component to show you remember these preferences.
+Example: {"component": "SessionMemory", "props": {"memories": ${JSON.stringify(sessionMemory.preferences || [])}}}`
       })
     }
 

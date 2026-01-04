@@ -41,7 +41,21 @@ async function getAIAnalysis(
 - Allergens to avoid: ${userPreferences.allergens.join(', ') || 'None'}`
     : ''
 
-  const prompt = `Analyze this food product and generate a Thesys Generative UI response:
+  // Determine confidence level based on data completeness
+  const hasIngredients = !!ingredients && ingredients.length > 10
+  const hasNutriScore = !!nutriScore
+  const hasNovaGroup = !!novaGroup
+  const confidenceLevel = hasIngredients && hasNutriScore && hasNovaGroup ? 'high' 
+    : hasIngredients ? 'medium' 
+    : 'low'
+  
+  const confidenceReason = confidenceLevel === 'high' 
+    ? 'Complete product data available'
+    : confidenceLevel === 'medium'
+    ? 'Partial data - some scores unavailable'
+    : 'Limited data - missing key information'
+
+  const prompt = `Analyze this food product and generate a structured Thesys Generative UI response with reasoning blocks:
 
 Product: ${productName}${brand ? ` by ${brand}` : ''}
 Ingredients: ${ingredients || 'Not available'}
@@ -52,17 +66,66 @@ ${signalSummary}
 ${userConflictsSummary}
 ${flaggedAdditiveSummary ? `Additives of note:\n${flaggedAdditiveSummary}` : ''}
 
-Generate a comprehensive Thesys UI JSON response with:
-1. Header with product name and brand
-2. ${userConflicts && userConflicts.length > 0 ? 'FIRST: A prominent CalloutV2 with variant="error" for any allergen alerts or variant="warning" for dietary conflicts' : ''}
-3. MiniCardBlock showing NOVA group and NutriScore with appropriate icons
-4. TagBlock with quick status tags (FDA status, processing level, etc.)
-5. SectionBlock with foldable sections for:
-   - ${userConflicts && userConflicts.length > 0 ? 'Personal conflicts (highlighted)' : 'Ingredient breakdown'}
-   - Health concerns (if any)
-   - Positive aspects
-6. Be balanced and evidence-based, avoid fear-mongering
-${userConflicts && userConflicts.length > 0 ? '\nIMPORTANT: The user has specific dietary needs. Make any conflicts VERY visible at the top of the response.' : ''}`
+DATA QUALITY: Confidence ${confidenceLevel} - ${confidenceReason}
+
+REQUIRED OUTPUT STRUCTURE (use these new components in this order):
+
+1. **AIInterpretationLabel** - Start with this to label the response as AI interpretation
+   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
+
+2. **IntentInference** - State what you assume the user wants to know
+   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know if this is safe for regular consumption."}}
+
+3. **Header** - Product name with brand
+   {"component": "Header", "props": {"title": "Product Name", "subtitle": "by Brand"}}
+
+4. **ConfidenceIndicator** - Show data confidence level
+   {"component": "ConfidenceIndicator", "props": {"level": "${confidenceLevel}", "reason": "${confidenceReason}"}}
+
+5. **SessionMemory** (if user has remembered preferences from session) - Show remembered preferences
+   {"component": "SessionMemory", "props": {"memories": ["user preference 1", "user preference 2"]}}
+
+6. **ReasoningBlocks** - Structured thinking with these block types:
+   {"component": "ReasoningBlocks", "props": {"blocks": [
+     {"type": "thinking", "content": "What matters to you about this product..."},
+     {"type": "why-matters", "content": "This is significant because..."},
+     {"type": "tradeoffs", "content": "On one hand... on the other hand..."},
+     {"type": "uncertainty", "content": "What we're not certain about..."},
+     {"type": "bottom-line", "content": "The key takeaway is..."}
+   ]}}
+
+7. **DecisionVerdict** - Clear verdict card (REQUIRED)
+   {"component": "DecisionVerdict", "props": {
+     "verdict": "safe|occasional|avoid",
+     "summary": "One sentence explaining the verdict"
+   }}
+   - Use "safe" (🟢) for minimally processed, no concerns
+   - Use "occasional" (🟡) for ultra-processed but not harmful
+   - Use "avoid" (🔴) only for genuine health concerns
+
+8. **UncertaintyDisclosure** - What we don't know
+   {"component": "UncertaintyDisclosure", "props": {"items": [
+     "Exact ingredient quantities aren't disclosed",
+     "Assessment assumes typical industry usage"
+   ]}}
+
+9. **MomentQuestion** - One contextual clarification
+   {"component": "MomentQuestion", "props": {
+     "question": "Is this for daily use or occasional treat?",
+     "options": [
+       {"label": "Daily use", "query": "Is this safe for daily consumption?"},
+       {"label": "Occasional", "query": "Is this okay as an occasional treat?"}
+     ]
+   }}
+
+10. **SuggestionChips** at the end for follow-up questions
+
+IMPORTANT GUIDELINES:
+- Always infer user intent upfront - don't ask questions first
+- Be honest about uncertainty - OpenFoodFacts data can be incomplete
+- The verdict must be clear and actionable
+- Include ALL reasoning blocks to show your thinking
+- Label everything as interpretation, not raw data display`
 
   const THESYS_SYSTEM = `You are a health co-pilot that analyzes food products. You MUST respond with Thesys Generative UI JSON format only.
 
@@ -77,21 +140,52 @@ Your response must be a valid JSON object with this exact structure:
   "error": null
 }
 
-Available components:
-- Card: Main container {"component": "Card", "props": {"children": [...]}}
-- Header: {"component": "Header", "props": {"title": "string", "subtitle": "optional string"}}
-- MiniCardBlock: {"component": "MiniCardBlock", "props": {"children": [MiniCard components]}}
-- MiniCard: {"component": "MiniCard", "props": {"lhs": DataTile component}}
-- DataTile: {"component": "DataTile", "props": {"amount": "value", "description": "label", "child": Icon component}}
-- Icon: {"component": "Icon", "props": {"name": "icon-name"}}
-  Icons: shield-check, shield-alert, zap, package, clock, alert-triangle, check-circle, info, leaf, heart, activity, beaker, apple, flame, scale, star, x-circle, trending-up
-- TextContent: {"component": "TextContent", "props": {"textMarkdown": "text"}}
-- TagBlock: {"component": "TagBlock", "props": {"children": [{"text": "label", "variant": "success|warning|error|info"}]}}
-- SectionBlock: {"component": "SectionBlock", "props": {"isFoldable": true, "sections": [{"value": "id", "trigger": "Title", "content": [...]}]}}
-- List: {"component": "List", "props": {"items": [{"title": "string", "subtitle": "string", "iconName": "icon-name"}]}}
-- CalloutV2: {"component": "CalloutV2", "props": {"variant": "success|warning|error|info", "title": "string", "description": "string"}}
+=== NEW REASONING & DECISION COMPONENTS ===
 
-CRITICAL: Output ONLY valid JSON. No markdown, no text before or after.`
+1. AIInterpretationLabel - Label outputs as AI interpretation
+   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
+
+2. IntentInference - State inferred user intent (NO questions first!)
+   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know..."}}
+
+3. ConfidenceIndicator - Show assessment confidence
+   {"component": "ConfidenceIndicator", "props": {"level": "high|medium|low", "reason": "Why this confidence level"}}
+
+4. ReasoningBlocks - Structured thinking sections
+   {"component": "ReasoningBlocks", "props": {"blocks": [
+     {"type": "thinking", "content": "What I think you care about..."},
+     {"type": "why-matters", "content": "Why this matters..."},
+     {"type": "tradeoffs", "content": "Tradeoffs to consider..."},
+     {"type": "uncertainty", "content": "What's uncertain..."},
+     {"type": "bottom-line", "content": "The key decision point..."}
+   ]}}
+
+5. DecisionVerdict - REQUIRED bold decision card
+   {"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "Clear explanation"}}
+   - safe (🟢): Safe for daily use
+   - occasional (🟡): Okay occasionally
+   - avoid (🔴): Avoid if health-conscious
+
+6. UncertaintyDisclosure - What we don't know
+   {"component": "UncertaintyDisclosure", "props": {"items": ["Unknown 1", "Unknown 2"]}}
+
+7. MomentQuestion - One contextual clarification (NOT asking first, but offering to refine)
+   {"component": "MomentQuestion", "props": {"question": "...", "options": [{"label": "...", "query": "..."}]}}
+
+8. SessionMemory - Show remembered preferences
+   {"component": "SessionMemory", "props": {"memories": ["prefers natural", "avoids additives"]}}
+
+=== EXISTING COMPONENTS ===
+- Card, Header, MiniCardBlock, MiniCard, DataTile, Icon, TextContent, TagBlock, SectionBlock, List, CalloutV2, SuggestionChips
+
+CRITICAL RULES:
+1. ALWAYS start with AIInterpretationLabel
+2. ALWAYS include IntentInference (infer, don't ask)
+3. ALWAYS include DecisionVerdict with clear safe/occasional/avoid
+4. ALWAYS include ReasoningBlocks showing your thinking
+5. ALWAYS include UncertaintyDisclosure
+6. Add MomentQuestion for context refinement AFTER giving verdict
+7. Output ONLY valid JSON. No markdown, no text before or after.`
 
   try {
     const completion = await client.chat.completions.create({

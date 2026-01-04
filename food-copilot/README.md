@@ -2,6 +2,53 @@
 
 AI-native consumer health co-pilot for understanding food labels. Chat-first interface where AI reasons over real ingredient data to provide calm, honest guidance.
 
+## ✨ Key Features
+
+### 🧠 Structured Reasoning UI
+AI responses are organized into clear reasoning blocks:
+- **🧠 What I think you care about** - AI identifies your main concern
+- **⚠️ Why this matters** - Context and significance
+- **⚖️ Tradeoffs** - Balanced perspective
+- **❓ Uncertainty** - Honest unknowns
+- **✅ Bottom-line decision** - Clear takeaway
+
+### 🎯 Decision Verdict Cards
+Bold, color-coded decision summaries:
+- 🟢 **Safe for daily use** - Minimally processed, no concerns
+- 🟡 **Okay occasionally** - Ultra-processed but not harmful
+- 🔴 **Avoid if health-conscious** - Genuine health concerns
+
+### 💡 Intent Inference
+AI explicitly states what it assumes you want to know:
+> "I'm assuming you want to know if this is safe for regular consumption."
+
+No asking questions first - AI infers your intent immediately.
+
+### 🔍 Confidence Indicators
+Every assessment shows data confidence level:
+- **High** - Complete product data available
+- **Medium** - Partial data, some scores unavailable
+- **Low** - Missing key information
+
+### ❓ Uncertainty Disclosure
+Explicit "what we don't know" section:
+- Exact ingredient quantities aren't disclosed
+- Assessment assumes typical industry usage
+
+### 🎤 Moment-of-Decision Questions
+Contextual clarification after the verdict:
+> "Is this for daily use or occasional treat?"
+
+Refines the assessment without blocking the initial response.
+
+### 💾 Session Memory
+Lightweight preference tracking during your session:
+- "You usually avoid additives"
+- "You care about daily safety"
+
+### 🏷️ AI Interpretation Labels
+All outputs clearly labeled as AI interpretation, not raw data.
+
 ## 🚀 Quick Start
 
 ```bash

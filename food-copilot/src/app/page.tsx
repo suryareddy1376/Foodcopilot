@@ -50,6 +50,49 @@ interface Message {
   type?: 'scan' | 'text' | 'ingredients'
 }
 
+// Session memory for lightweight preference tracking
+interface SessionMemory {
+  preferences: string[]  // e.g., "avoids additives", "cares about daily safety"
+  lastIntent?: string    // e.g., "checking daily safety"
+}
+
+// Helper to extract preferences from user messages
+function extractPreferences(message: string, currentMemory: SessionMemory): SessionMemory {
+  const newPrefs = [...currentMemory.preferences]
+  const lowerMsg = message.toLowerCase()
+  
+  // Detect preference patterns
+  const patterns = [
+    { match: /avoid.*(additive|preservative|artificial)/i, pref: 'avoids additives' },
+    { match: /daily|everyday|regular/i, pref: 'cares about daily safety' },
+    { match: /child|kid|baby/i, pref: 'concerned about children' },
+    { match: /diet|weight|calorie/i, pref: 'watching diet' },
+    { match: /natural|organic|clean/i, pref: 'prefers natural' },
+    { match: /sugar|sweet/i, pref: 'monitors sugar' },
+    { match: /allerg/i, pref: 'has allergies' },
+  ]
+  
+  for (const { match, pref } of patterns) {
+    if (match.test(lowerMsg) && !newPrefs.includes(pref)) {
+      newPrefs.push(pref)
+      // Keep only last 2 preferences
+      if (newPrefs.length > 2) newPrefs.shift()
+    }
+  }
+  
+  // Detect intent
+  let intent = currentMemory.lastIntent
+  if (/safe.*daily|everyday|regular use/i.test(lowerMsg)) {
+    intent = 'checking daily safety'
+  } else if (/occasional|sometimes|once in a while/i.test(lowerMsg)) {
+    intent = 'checking for occasional use'
+  } else if (/child|kid|baby/i.test(lowerMsg)) {
+    intent = 'checking safety for children'
+  }
+  
+  return { preferences: newPrefs, lastIntent: intent }
+}
+
 // Custom component for rendering AI-generated content with visual enhancements
 function GenerativeContent({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
   // While streaming, show a loading state instead of partial JSON
@@ -169,6 +212,7 @@ export default function Home() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [fabExpanded, setFabExpanded] = useState(false)
   const [welcomeGenerated, setWelcomeGenerated] = useState(false)
+  const [sessionMemory, setSessionMemory] = useState<SessionMemory>({ preferences: [], lastIntent: undefined })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   
@@ -297,6 +341,10 @@ export default function Home() {
     setIsLoading(true)
     setStreamingContent('')
 
+    // Update session memory based on user message
+    const updatedMemory = extractPreferences(message, sessionMemory)
+    setSessionMemory(updatedMemory)
+
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
@@ -312,7 +360,8 @@ export default function Home() {
         body: JSON.stringify({
           message,
           history: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
-          productContext
+          productContext,
+          sessionMemory: updatedMemory
         })
       })
 

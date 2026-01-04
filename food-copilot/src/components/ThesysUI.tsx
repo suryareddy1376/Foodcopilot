@@ -765,6 +765,262 @@ function FeedbackRow({ messageId }: { messageId?: string }) {
 }
 
 // ==========================================
+// NEW REASONING & DECISION COMPONENTS
+// ==========================================
+
+// AI Interpretation Label - Labels all outputs as interpretation
+function AIInterpretationLabel({ label }: { label?: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg w-fit">
+      <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+      <span className="text-xs font-medium text-violet-700">{label || 'AI Interpretation'}</span>
+    </div>
+  )
+}
+
+// Intent Inference Line - AI explicitly states inferred intent
+function IntentInference({ intent }: { intent: string }) {
+  return (
+    <div className="flex items-start gap-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl mb-4">
+      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+        <Search className="w-4 h-4 text-blue-600" />
+      </div>
+      <div>
+        <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">What I think you're asking</p>
+        <p className="text-sm text-slate-700 leading-relaxed">{intent}</p>
+      </div>
+    </div>
+  )
+}
+
+// Confidence Indicator - Shows confidence level of assessment
+function ConfidenceIndicator({ level, reason }: { level: 'high' | 'medium' | 'low'; reason?: string }) {
+  const config = {
+    high: { 
+      bg: 'bg-emerald-50', 
+      border: 'border-emerald-200', 
+      text: 'text-emerald-700',
+      barColor: 'bg-emerald-500',
+      label: 'High Confidence'
+    },
+    medium: { 
+      bg: 'bg-amber-50', 
+      border: 'border-amber-200', 
+      text: 'text-amber-700',
+      barColor: 'bg-amber-500',
+      label: 'Medium Confidence'
+    },
+    low: { 
+      bg: 'bg-red-50', 
+      border: 'border-red-200', 
+      text: 'text-red-700',
+      barColor: 'bg-red-500',
+      label: 'Low Confidence'
+    }
+  }
+  
+  const c = config[level] || config.medium
+  const barWidth = level === 'high' ? 'w-full' : level === 'medium' ? 'w-2/3' : 'w-1/3'
+  
+  return (
+    <div className={`${c.bg} ${c.border} border rounded-xl p-3 mb-4`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Activity className={`w-4 h-4 ${c.text}`} />
+          <span className={`text-sm font-medium ${c.text}`}>{c.label}</span>
+        </div>
+      </div>
+      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+        <div className={`h-full ${c.barColor} ${barWidth} rounded-full transition-all`} />
+      </div>
+      {reason && <p className="text-xs text-slate-500 mt-2">{reason}</p>}
+    </div>
+  )
+}
+
+// Reasoning Block - Structured AI thinking section
+function ReasoningBlock({ 
+  emoji, 
+  title, 
+  content,
+  variant = 'default'
+}: { 
+  emoji?: string
+  title: string 
+  content: string
+  variant?: 'default' | 'warning' | 'info' | 'success'
+}) {
+  const variants = {
+    default: 'bg-slate-50 border-slate-200',
+    warning: 'bg-amber-50 border-amber-200',
+    info: 'bg-blue-50 border-blue-200',
+    success: 'bg-emerald-50 border-emerald-200'
+  }
+  
+  return (
+    <div className={`border rounded-xl p-4 mb-3 ${variants[variant]}`}>
+      <div className="flex items-center gap-2 mb-2">
+        {emoji && <span className="text-lg">{emoji}</span>}
+        <h4 className="font-semibold text-slate-800 text-sm">{title}</h4>
+      </div>
+      <p className="text-sm text-slate-600 leading-relaxed">{content}</p>
+    </div>
+  )
+}
+
+// Reasoning Blocks Container - Groups all reasoning sections
+function ReasoningBlocks({ blocks }: { 
+  blocks: Array<{
+    type: 'thinking' | 'why-matters' | 'tradeoffs' | 'uncertainty' | 'bottom-line'
+    content: string
+  }> 
+}) {
+  const blockConfig = {
+    'thinking': { emoji: '🧠', title: 'What I think you care about', variant: 'info' as const },
+    'why-matters': { emoji: '⚠️', title: 'Why this matters', variant: 'warning' as const },
+    'tradeoffs': { emoji: '⚖️', title: 'Tradeoffs to consider', variant: 'default' as const },
+    'uncertainty': { emoji: '❓', title: 'Uncertainty', variant: 'default' as const },
+    'bottom-line': { emoji: '✅', title: 'Bottom-line decision', variant: 'success' as const }
+  }
+  
+  if (!blocks || blocks.length === 0) return null
+  
+  return (
+    <div className="my-4">
+      {blocks.map((block, i) => {
+        const config = blockConfig[block.type] || blockConfig['thinking']
+        return (
+          <ReasoningBlock 
+            key={i}
+            emoji={config.emoji}
+            title={config.title}
+            content={block.content}
+            variant={config.variant}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// Decision Verdict Card - Bold decision summary
+function DecisionVerdict({ 
+  verdict, 
+  summary,
+  icon
+}: { 
+  verdict: 'safe' | 'occasional' | 'avoid'
+  summary: string
+  icon?: string
+}) {
+  const verdictConfig = {
+    safe: { 
+      emoji: '🟢',
+      title: 'Safe for daily use',
+      bg: 'bg-gradient-to-r from-emerald-500 to-green-500',
+      shadow: 'shadow-emerald-500/30'
+    },
+    occasional: { 
+      emoji: '🟡',
+      title: 'Okay occasionally',
+      bg: 'bg-gradient-to-r from-amber-500 to-yellow-500',
+      shadow: 'shadow-amber-500/30'
+    },
+    avoid: { 
+      emoji: '🔴',
+      title: 'Avoid if health-conscious',
+      bg: 'bg-gradient-to-r from-red-500 to-rose-500',
+      shadow: 'shadow-red-500/30'
+    }
+  }
+  
+  const config = verdictConfig[verdict] || verdictConfig.occasional
+  
+  return (
+    <div className={`${config.bg} ${config.shadow} rounded-2xl p-5 text-white shadow-xl my-4`}>
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-2xl">{config.emoji}</span>
+        <h3 className="text-lg font-bold">{config.title}</h3>
+      </div>
+      <p className="text-white/90 text-sm leading-relaxed">{summary}</p>
+    </div>
+  )
+}
+
+// Uncertainty Disclosure Box - Explicit "what we don't know"
+function UncertaintyDisclosure({ items }: { items: string[] }) {
+  if (!items || items.length === 0) return null
+  
+  return (
+    <div className="bg-slate-100 border border-slate-300 rounded-xl p-4 my-4">
+      <div className="flex items-center gap-2 mb-3">
+        <HelpCircle className="w-5 h-5 text-slate-500" />
+        <h4 className="font-semibold text-slate-700 text-sm">What we don't know</h4>
+      </div>
+      <ul className="space-y-2">
+        {items.map((item, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+            <Minus className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// Moment-of-Decision Question - Contextual clarification
+function MomentQuestion({ 
+  question,
+  options 
+}: { 
+  question: string
+  options?: Array<{ label: string; query: string }>
+}) {
+  const handlers = useActionHandlers()
+  
+  return (
+    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4 my-4">
+      <div className="flex items-center gap-2 mb-3">
+        <MessageCircle className="w-5 h-5 text-indigo-500" />
+        <h4 className="font-semibold text-indigo-700 text-sm">Quick context check</h4>
+      </div>
+      <p className="text-sm text-slate-700 mb-3">{question}</p>
+      {options && options.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {options.map((opt, i) => (
+            <button
+              key={i}
+              onClick={() => handlers.onAskQuestion?.(opt.query)}
+              className="px-3 py-1.5 bg-white border border-indigo-200 hover:border-indigo-400 rounded-full text-sm text-indigo-700 hover:bg-indigo-50 transition-all"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Session Memory Display - Shows remembered preferences
+function SessionMemory({ memories }: { memories: string[] }) {
+  if (!memories || memories.length === 0) return null
+  
+  return (
+    <div className="flex items-center gap-2 flex-wrap mb-3 p-2 bg-teal-50 border border-teal-200 rounded-lg">
+      <Eye className="w-4 h-4 text-teal-600" />
+      <span className="text-xs font-medium text-teal-700">Remembering:</span>
+      {memories.map((memory, i) => (
+        <span key={i} className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">
+          {memory}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// ==========================================
 // NATIVE THESYS SDK COMPONENTS
 // ==========================================
 
@@ -924,6 +1180,81 @@ function Divider() {
   return <hr className="my-4 border-slate-200" />
 }
 
+// Layout - Flexible layout container
+function Layout({ 
+  direction = 'vertical', 
+  gap = 'md',
+  children 
+}: { 
+  direction?: 'horizontal' | 'vertical'
+  gap?: 'sm' | 'md' | 'lg'
+  children?: ThesysComponent[]
+}) {
+  const gapClass = { sm: 'gap-2', md: 'gap-4', lg: 'gap-6' }[gap] || 'gap-4'
+  const dirClass = direction === 'horizontal' ? 'flex flex-row flex-wrap' : 'flex flex-col'
+  
+  return (
+    <div className={`${dirClass} ${gapClass}`}>
+      {children?.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// Container - Generic container wrapper
+function Container({ children, className }: { children?: ThesysComponent[]; className?: string }) {
+  return (
+    <div className={className || ''}>
+      {children?.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// Box - Simple box container
+function Box({ children, padding, background }: { children?: ThesysComponent[]; padding?: string; background?: string }) {
+  return (
+    <div className={`${padding || 'p-4'} ${background || ''} rounded-lg`}>
+      {children?.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// Stack - Vertical stack layout
+function Stack({ children, spacing = 'md' }: { children?: ThesysComponent[]; spacing?: 'sm' | 'md' | 'lg' }) {
+  const spaceClass = { sm: 'space-y-2', md: 'space-y-4', lg: 'space-y-6' }[spacing] || 'space-y-4'
+  
+  return (
+    <div className={spaceClass}>
+      {children?.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// Grid - Grid layout
+function Grid({ children, columns = 2 }: { children?: ThesysComponent[]; columns?: number }) {
+  const colClass = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 sm:grid-cols-2',
+    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    4: 'grid-cols-2 lg:grid-cols-4'
+  }[columns] || 'grid-cols-2'
+  
+  return (
+    <div className={`grid ${colClass} gap-4`}>
+      {children?.map((child, i) => (
+        <React.Fragment key={i}>{renderThesysComponent(child)}</React.Fragment>
+      ))}
+    </div>
+  )
+}
+
 // Main renderer function
 function renderThesysComponent(component: ThesysComponent): React.ReactNode {
   const { component: type, props } = component
@@ -983,6 +1314,36 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <Chip {...props} />
     case 'Divider':
       return <Divider />
+    // LAYOUT COMPONENTS
+    case 'Layout':
+      return <Layout {...props} />
+    case 'Container':
+      return <Container {...props} />
+    case 'Box':
+      return <Box {...props} />
+    case 'Stack':
+      return <Stack {...props} />
+    case 'Grid':
+      return <Grid {...props} />
+    // NEW REASONING & DECISION COMPONENTS
+    case 'AIInterpretationLabel':
+      return <AIInterpretationLabel {...props} />
+    case 'IntentInference':
+      return <IntentInference intent={props.intent || ''} />
+    case 'ConfidenceIndicator':
+      return <ConfidenceIndicator level={props.level || 'medium'} reason={props.reason} />
+    case 'ReasoningBlock':
+      return <ReasoningBlock title={props.title || ''} content={props.content || ''} {...props} />
+    case 'ReasoningBlocks':
+      return <ReasoningBlocks blocks={props.blocks || []} />
+    case 'DecisionVerdict':
+      return <DecisionVerdict verdict={props.verdict || 'occasional'} summary={props.summary || ''} />
+    case 'UncertaintyDisclosure':
+      return <UncertaintyDisclosure items={props.items || []} />
+    case 'MomentQuestion':
+      return <MomentQuestion question={props.question || ''} options={props.options} />
+    case 'SessionMemory':
+      return <SessionMemory memories={props.memories || []} />
     default:
       console.warn(`Unknown Thesys component: ${type}`)
       return <div className="text-red-500">Unknown component: {type}</div>
