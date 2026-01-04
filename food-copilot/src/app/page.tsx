@@ -20,7 +20,8 @@ import {
   Scale,
   Plus,
   X,
-  ChevronUp
+  ChevronUp,
+  Search
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import ThesysUIRenderer, { ActionProvider } from '@/components/ThesysUI'
@@ -213,6 +214,8 @@ export default function Home() {
   const [fabExpanded, setFabExpanded] = useState(false)
   const [welcomeGenerated, setWelcomeGenerated] = useState(false)
   const [sessionMemory, setSessionMemory] = useState<SessionMemory>({ preferences: [], lastIntent: undefined })
+  const [demoMode, setDemoMode] = useState(false)
+  const [showWhyAINative, setShowWhyAINative] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   
@@ -581,6 +584,26 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Why AI-Native Button */}
+              <button
+                onClick={() => setShowWhyAINative(true)}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full transition-colors"
+              >
+                <Sparkles className="w-3 h-3" />
+                Why AI-Native?
+              </button>
+
+              {/* Demo Mode Toggle */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full">
+                <span className="text-xs text-slate-500">Demo</span>
+                <button
+                  onClick={() => setDemoMode(!demoMode)}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${demoMode ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${demoMode ? 'translate-x-4' : ''}`} />
+                </button>
+              </div>
+
               {/* History Button */}
               {user && (
                 <button
@@ -671,6 +694,83 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* Demo Mode Status Bar */}
+      {demoMode && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center gap-2">
+            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+            <span className="text-xs text-amber-700 font-medium">Demo mode on — predictable example flow</span>
+          </div>
+        </div>
+      )}
+
+      {/* Why AI-Native Modal */}
+      {showWhyAINative && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-violet-500" />
+                  <h2 className="text-lg font-bold text-slate-800">Why Food Co-Pilot is AI-Native</h2>
+                </div>
+                <button onClick={() => setShowWhyAINative(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              
+              <p className="text-slate-600 mb-6">
+                Food Co-Pilot is designed as an AI-native experience — not a traditional app with AI added on top.
+              </p>
+              
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <Search className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-slate-800 text-sm">Intent-first interaction</h4>
+                    <p className="text-xs text-slate-600 mt-1">
+                      The system infers what you likely care about without forms, filters, or manual configuration.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <Info className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-slate-800 text-sm">Reasoning-driven guidance</h4>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Instead of listing ingredients, the AI explains why something matters, what tradeoffs exist, and where uncertainty remains.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <Scale className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-slate-800 text-sm">Decision compression</h4>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Complex food information is reduced into clear, situational guidance to support real-world decisions.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <p className="text-xs text-slate-400 italic text-center">
+                  This prototype prioritizes reasoning quality and experience design over data completeness.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content - Pure Conversational UI */}
       <main className="max-w-4xl mx-auto px-4 pb-32">

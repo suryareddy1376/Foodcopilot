@@ -770,10 +770,24 @@ function FeedbackRow({ messageId }: { messageId?: string }) {
 
 // AI Interpretation Label - Labels all outputs as interpretation
 function AIInterpretationLabel({ label }: { label?: string }) {
+  const [showTooltip, setShowTooltip] = React.useState(false)
+  
   return (
-    <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg w-fit">
-      <Sparkles className="w-3.5 h-3.5 text-violet-500" />
-      <span className="text-xs font-medium text-violet-700">{label || 'AI Interpretation'}</span>
+    <div className="relative inline-block mb-3">
+      <div 
+        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg cursor-help"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+        <span className="text-xs font-medium text-violet-700">{label || 'AI-interpreted guidance'}</span>
+      </div>
+      {showTooltip && (
+        <div className="absolute top-full left-0 mt-1 z-10 w-64 p-2 bg-slate-800 text-white text-xs rounded-lg shadow-lg">
+          This assessment is an interpretation of available ingredient information, not a medical or nutritional diagnosis.
+          <div className="absolute -top-1 left-4 w-2 h-2 bg-slate-800 rotate-45" />
+        </div>
+      )}
     </div>
   )
 }
@@ -793,47 +807,46 @@ function IntentInference({ intent }: { intent: string }) {
   )
 }
 
-// Confidence Indicator - Shows confidence level of assessment
+// Confidence Indicator Badge - Shows confidence level of assessment
 function ConfidenceIndicator({ level, reason }: { level: 'high' | 'medium' | 'low'; reason?: string }) {
   const config = {
     high: { 
       bg: 'bg-emerald-50', 
       border: 'border-emerald-200', 
       text: 'text-emerald-700',
-      barColor: 'bg-emerald-500',
-      label: 'High Confidence'
+      badgeBg: 'bg-emerald-500',
+      label: 'High confidence',
+      defaultReason: 'Ingredient details are clear and consistent.'
     },
     medium: { 
       bg: 'bg-amber-50', 
       border: 'border-amber-200', 
       text: 'text-amber-700',
-      barColor: 'bg-amber-500',
-      label: 'Medium Confidence'
+      badgeBg: 'bg-amber-500',
+      label: 'Medium confidence',
+      defaultReason: 'Some ingredient details are missing or generalized.'
     },
     low: { 
       bg: 'bg-red-50', 
       border: 'border-red-200', 
       text: 'text-red-700',
-      barColor: 'bg-red-500',
-      label: 'Low Confidence'
+      badgeBg: 'bg-red-500',
+      label: 'Low confidence',
+      defaultReason: 'Limited ingredient disclosure reduces certainty.'
     }
   }
   
   const c = config[level] || config.medium
-  const barWidth = level === 'high' ? 'w-full' : level === 'medium' ? 'w-2/3' : 'w-1/3'
   
   return (
-    <div className={`${c.bg} ${c.border} border rounded-xl p-3 mb-4`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Activity className={`w-4 h-4 ${c.text}`} />
-          <span className={`text-sm font-medium ${c.text}`}>{c.label}</span>
-        </div>
+    <div className={`${c.bg} ${c.border} border rounded-xl p-3 my-3`}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className={`${c.badgeBg} text-white text-xs font-bold px-2 py-0.5 rounded-full`}>
+          {c.label}
+        </span>
+        <span className="text-xs text-slate-500">Assessment confidence</span>
       </div>
-      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-        <div className={`h-full ${c.barColor} ${barWidth} rounded-full transition-all`} />
-      </div>
-      {reason && <p className="text-xs text-slate-500 mt-2">{reason}</p>}
+      <p className={`text-sm ${c.text}`}>{reason || c.defaultReason}</p>
     </div>
   )
 }
@@ -944,6 +957,150 @@ function DecisionVerdict({
       </div>
       <p className="text-white/90 text-sm leading-relaxed">{summary}</p>
     </div>
+  )
+}
+
+// Decision Summary Strip - 1-line summary below verdict
+function DecisionSummaryStrip({ 
+  primaryReason, 
+  verdict 
+}: { 
+  primaryReason: string
+  verdict: string 
+}) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg text-sm my-2">
+      <span className="font-medium text-slate-600">Decision summary:</span>
+      <span className="text-slate-700">{primaryReason}</span>
+      <ArrowRight className="w-4 h-4 text-slate-400" />
+      <span className="font-semibold text-slate-800">{verdict}</span>
+    </div>
+  )
+}
+
+// Failure Transparency State - When not enough information
+function FailureTransparency({ onTryAnother, onAskQuestion }: { onTryAnother?: () => void; onAskQuestion?: () => void }) {
+  const handlers = useActionHandlers()
+  
+  return (
+    <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl p-6 my-4 text-center">
+      <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-slate-200 flex items-center justify-center">
+        <AlertCircle className="w-6 h-6 text-slate-500" />
+      </div>
+      <h3 className="text-lg font-bold text-slate-800 mb-2">Not enough information</h3>
+      <p className="text-slate-600 text-sm mb-2">
+        I don't have sufficient ingredient detail to give a confident recommendation for this product.
+      </p>
+      <p className="text-slate-500 text-xs mb-4">
+        Food Co-Pilot avoids guessing when ingredient disclosure is limited.
+      </p>
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+        <button
+          onClick={() => handlers.onScanBarcode?.()}
+          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-medium transition-colors"
+        >
+          Try another product
+        </button>
+        <span className="text-slate-400 text-sm">or</span>
+        <button
+          onClick={() => handlers.onAskQuestion?.('What would you like to know about food ingredients?')}
+          className="px-4 py-2 bg-white border border-slate-300 hover:border-emerald-400 text-slate-700 rounded-xl text-sm font-medium transition-colors"
+        >
+          Ask a general question
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Why AI-Native Modal Content
+function WhyAINativeModal({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
+  if (!isOpen) return null
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" />
+              <h2 className="text-lg font-bold text-slate-800">Why Food Co-Pilot is AI-Native</h2>
+            </div>
+            {onClose && (
+              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                <XCircle className="w-5 h-5 text-slate-400" />
+              </button>
+            )}
+          </div>
+          
+          <p className="text-slate-600 mb-6">
+            Food Co-Pilot is designed as an AI-native experience — not a traditional app with AI added on top.
+          </p>
+          
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Search className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-slate-800 text-sm">Intent-first interaction</h4>
+                <p className="text-xs text-slate-600 mt-1">
+                  The system infers what you likely care about without forms, filters, or manual configuration.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Activity className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-slate-800 text-sm">Reasoning-driven guidance</h4>
+                <p className="text-xs text-slate-600 mt-1">
+                  Instead of listing ingredients, the AI explains why something matters, what tradeoffs exist, and where uncertainty remains.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <Scale className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-slate-800 text-sm">Decision compression</h4>
+                <p className="text-xs text-slate-600 mt-1">
+                  Complex food information is reduced into clear, situational guidance to support real-world decisions.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-6 pt-4 border-t border-slate-200">
+            <p className="text-xs text-slate-400 italic text-center">
+              This prototype prioritizes reasoning quality and experience design over data completeness.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Why AI-Native Info Button (inline trigger)
+function WhyAINativeButton() {
+  const [isOpen, setIsOpen] = React.useState(false)
+  
+  return (
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full transition-colors"
+      >
+        <Sparkles className="w-3 h-3" />
+        Why AI-Native?
+      </button>
+      <WhyAINativeModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+    </>
   )
 }
 
@@ -1338,12 +1495,20 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <ReasoningBlocks blocks={props.blocks || []} />
     case 'DecisionVerdict':
       return <DecisionVerdict verdict={props.verdict || 'occasional'} summary={props.summary || ''} />
+    case 'DecisionSummaryStrip':
+      return <DecisionSummaryStrip primaryReason={props.primaryReason || ''} verdict={props.verdict || ''} />
     case 'UncertaintyDisclosure':
       return <UncertaintyDisclosure items={props.items || []} />
     case 'MomentQuestion':
       return <MomentQuestion question={props.question || ''} options={props.options} />
     case 'SessionMemory':
       return <SessionMemory memories={props.memories || []} />
+    case 'FailureTransparency':
+      return <FailureTransparency />
+    case 'WhyAINativeButton':
+      return <WhyAINativeButton />
+    case 'WhyAINativeModal':
+      return <WhyAINativeModal isOpen={props.isOpen} onClose={props.onClose} />
     default:
       console.warn(`Unknown Thesys component: ${type}`)
       return <div className="text-red-500">Unknown component: {type}</div>
