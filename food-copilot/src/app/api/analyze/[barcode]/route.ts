@@ -55,6 +55,31 @@ async function getAIAnalysis(
     ? 'Partial data - some scores unavailable'
     : 'Limited data - missing key information'
 
+  // Check if we should show failure transparency (insufficient data)
+  const shouldShowFailure = !hasIngredients && !hasNutriScore && !hasNovaGroup
+  
+  // If insufficient data, return failure transparency response
+  if (shouldShowFailure) {
+    return JSON.stringify({
+      component: {
+        component: 'Card',
+        props: {
+          children: [
+            { component: 'AIInterpretationLabel', props: { label: 'AI-interpreted guidance' } },
+            { component: 'Header', props: { title: productName, subtitle: brand ? `by ${brand}` : 'Product Analysis' } },
+            { component: 'FailureTransparency', props: {} },
+            { component: 'TextContent', props: { textMarkdown: 'Food Co-Pilot avoids guessing when ingredient disclosure is limited. This helps ensure you get reliable guidance.' } },
+            { component: 'SuggestionChips', props: { suggestions: [
+              { text: 'Try another product', query: 'scan another product' },
+              { text: 'Ask about ingredients', query: 'What should I look for in ingredient lists?' }
+            ] } }
+          ]
+        }
+      },
+      error: null
+    })
+  }
+
   const prompt = `Analyze this food product and generate a structured Thesys Generative UI response with reasoning blocks:
 
 Product: ${productName}${brand ? ` by ${brand}` : ''}

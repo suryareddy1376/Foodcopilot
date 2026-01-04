@@ -1277,6 +1277,76 @@ function ButtonGroup({
   )
 }
 
+// Image - Display images
+function ImageComponent({ 
+  src, 
+  alt, 
+  width, 
+  height,
+  rounded,
+  className 
+}: { 
+  src?: string
+  alt?: string
+  width?: number | string
+  height?: number | string
+  rounded?: boolean | string
+  className?: string
+}) {
+  if (!src) return null
+  
+  const roundedClass = rounded === true ? 'rounded-xl' 
+    : typeof rounded === 'string' ? rounded 
+    : ''
+  
+  return (
+    <img 
+      src={src} 
+      alt={alt || ''} 
+      width={width}
+      height={height}
+      className={`${roundedClass} ${className || ''} max-w-full`}
+    />
+  )
+}
+
+// Spacer - Add vertical space
+function Spacer({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' | 'xl' }) {
+  const sizeClass = {
+    sm: 'h-2',
+    md: 'h-4',
+    lg: 'h-6',
+    xl: 'h-8'
+  }[size] || 'h-4'
+  
+  return <div className={sizeClass} />
+}
+
+// Badge - Small status badge
+function Badge({ 
+  text, 
+  variant = 'default' 
+}: { 
+  text?: string
+  variant?: 'default' | 'success' | 'warning' | 'error' | 'info'
+}) {
+  if (!text) return null
+  
+  const variants = {
+    default: 'bg-slate-100 text-slate-700',
+    success: 'bg-emerald-100 text-emerald-700',
+    warning: 'bg-amber-100 text-amber-700',
+    error: 'bg-red-100 text-red-700',
+    info: 'bg-blue-100 text-blue-700'
+  }
+  
+  return (
+    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${variants[variant]}`}>
+      {text}
+    </span>
+  )
+}
+
 // FollowUpBlock - Native Thesys follow-up suggestions
 function FollowUpBlock({ followUpText }: { followUpText?: string[] }) {
   const handlers = useActionHandlers()
@@ -1482,6 +1552,13 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       return <Stack {...props} />
     case 'Grid':
       return <Grid {...props} />
+    // MEDIA & UTILITY COMPONENTS
+    case 'Image':
+      return <ImageComponent {...props} />
+    case 'Spacer':
+      return <Spacer {...props} />
+    case 'Badge':
+      return <Badge {...props} />
     // NEW REASONING & DECISION COMPONENTS
     case 'AIInterpretationLabel':
       return <AIInterpretationLabel {...props} />
