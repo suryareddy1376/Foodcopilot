@@ -32,43 +32,152 @@ export interface OFFResponse {
   product?: OpenFoodFactsProduct
 }
 
-export async function fetchProductFromOFF(barcode: string): Promise<OpenFoodFactsProduct | null> {
+// Fetch with timeout helper
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 20000): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
   try {
-    const response = await fetch(`${OFF_API_BASE}/product/${barcode}.json`, {
-      headers: {
-        // Required by Open Food Facts API guidelines
-        'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)'
-      }
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
     })
+    return response
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
 
-    if (!response.ok) {
-      console.error('OFF API error:', response.status)
-      return null
+// Normalize barcode - handle various formats
+export function normalizeBarcode(barcode: string): string {
+  // Remove any non-digit characters
+  let normalized = barcode.replace(/\D/g, '')
+
+  // Pad EAN-8 to EAN-13 if needed (some databases store both ways)
+  // Don't pad if already 12-14 digits (UPC-A or EAN-13)
+  if (normalized.length === 8) {
+    // Keep as-is, EAN-8 is valid
+    return normalized
+  }
+
+  // Some scanners add leading zeros - normalize UPC-A (12 digits) to EAN-13
+  if (normalized.length === 12) {
+    normalized = '0' + normalized
+  }
+
+  return normalized
+}
+
+export interface FetchProductResult {
+  product: OpenFoodFactsProduct | null
+  error?: 'not_found' | 'network_error' | 'timeout' | 'invalid_barcode' | 'server_error'
+  message?: string
+}
+
+export async function fetchProductFromOFF(barcode: string, retries: number = 2): Promise<FetchProductResult> {
+  // Validate barcode format
+  const cleanBarcode = barcode.replace(/\D/g, '')
+  if (cleanBarcode.length < 8 || cleanBarcode.length > 14) {
+    return {
+      product: null,
+      error: 'invalid_barcode',
+      message: `Invalid barcode length: ${cleanBarcode.length} digits. Expected 8-14 digits.`
     }
+  }
 
-    const data: OFFResponse = await response.json()
+  const normalizedBarcode = normalizeBarcode(cleanBarcode)
+  const barcodesToTry = [normalizedBarcode]
 
-    if (data.status !== 1 || !data.product) {
-      return null
+  // Also try original if different (some products are indexed under original barcode)
+  if (normalizedBarcode !== cleanBarcode) {
+    barcodesToTry.push(cleanBarcode)
+  }
+
+  // For UPC-A/EAN-13, also try without leading zero
+  if (normalizedBarcode.length === 13 && normalizedBarcode.startsWith('0')) {
+    barcodesToTry.push(normalizedBarcode.substring(1))
+  }
+
+  console.log(`[OFF] Fetching product, trying barcodes: ${barcodesToTry.join(', ')}`)
+
+  let lastError: 'network_error' | 'timeout' | 'server_error' = 'network_error'
+
+  for (const barcodeVariant of barcodesToTry) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetchWithTimeout(
+          `${OFF_API_BASE}/product/${barcodeVariant}.json`,
+          {
+            headers: {
+              'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)',
+              'Accept': 'application/json'
+            }
+          },
+          attempt === 0 ? 20000 : 30000 // Longer timeout on retry
+        )
+
+        if (response.status === 404) {
+          // Product not found - try next barcode variant
+          break
+        }
+
+        if (!response.ok) {
+          console.error('OFF API error:', response.status, response.statusText)
+          lastError = 'server_error'
+          // Retry on server errors
+          if (response.status >= 500 && attempt < retries) {
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+            continue
+          }
+          break
+        }
+
+        const data: OFFResponse = await response.json()
+
+        if (data.status === 1 && data.product) {
+          console.log(`[OFF] Found product: ${data.product.product_name || 'Unknown'}, NutriScore: ${data.product.nutriscore_grade || 'N/A'}, NOVA: ${data.product.nova_group || 'N/A'}`)
+          return { product: data.product }
+        }
+
+        console.log(`[OFF] Product not found for barcode variant: ${barcodeVariant}`)
+        // status !== 1 means product not found in this variant
+        break
+
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.warn(`OFF API timeout (attempt ${attempt + 1}) for barcode: ${barcodeVariant}`)
+          lastError = 'timeout'
+        } else {
+          console.error('Error fetching from OFF:', error.message)
+          lastError = 'network_error'
+        }
+
+        // Retry with exponential backoff
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      }
     }
+  }
 
-    return data.product
-  } catch (error) {
-    console.error('Error fetching from OFF:', error)
-    return null
+  // All attempts failed
+  return {
+    product: null,
+    error: 'not_found',
+    message: 'Product not found in OpenFoodFacts database. This might be a regional product or one that hasn\'t been cataloged yet.'
   }
 }
 
 // Transform OFF product to our database schema
 export function transformOFFProduct(offProduct: OpenFoodFactsProduct) {
-  return {
+  const transformed = {
     barcode: offProduct.code,
     product_name: offProduct.product_name || null,
     brand: offProduct.brands || null,
     ingredients_text: offProduct.ingredients_text || offProduct.ingredients_text_en || null,
     nutrition_facts_json: {
-      nova_group: offProduct.nova_group,
-      nutriscore: offProduct.nutriscore_grade,
+      nova_group: offProduct.nova_group ?? null,
+      nutriscore: offProduct.nutriscore_grade || null,
       additives_tags: offProduct.additives_tags || [],
       additives_count: offProduct.additives_n || 0,
       allergens: offProduct.allergens_tags || [],
@@ -78,26 +187,36 @@ export function transformOFFProduct(offProduct: OpenFoodFactsProduct) {
     },
     source: 'openfoodfacts'
   }
+
+  console.log(`[OFF Transform] Result - nova_group: ${transformed.nutrition_facts_json.nova_group}, nutriscore: ${transformed.nutrition_facts_json.nutriscore}, ingredients: ${transformed.ingredients_text?.substring(0, 50)}...`)
+
+  return transformed
 }
 
 // Search products by name (for future use)
 export async function searchProducts(query: string, limit: number = 10): Promise<OpenFoodFactsProduct[]> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${limit}`,
       {
         headers: {
-          'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)'
+          'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)',
+          'Accept': 'application/json'
         }
-      }
+      },
+      15000
     )
 
     if (!response.ok) return []
 
     const data = await response.json()
     return data.products || []
-  } catch (error) {
-    console.error('Error searching OFF:', error)
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.warn('Search timeout')
+    } else {
+      console.error('Error searching OFF:', error.message)
+    }
     return []
   }
 }
@@ -117,7 +236,7 @@ export async function addProductToOFF(
     formData.append('code', barcode)
     formData.append('user_id', OFF_USERNAME)
     formData.append('password', OFF_PASSWORD)
-    
+
     if (productData.product_name) {
       formData.append('product_name', productData.product_name)
     }
@@ -130,7 +249,7 @@ export async function addProductToOFF(
     if (productData.categories) {
       formData.append('categories', productData.categories)
     }
-    
+
     // Comment to track contributions
     formData.append('comment', 'Added via Food Co-Pilot app')
 
@@ -150,7 +269,7 @@ export async function addProductToOFF(
     }
 
     const result = await response.json()
-    
+
     if (result.status === 1 || result.status_verbose === 'fields saved') {
       return { success: true }
     } else {
@@ -198,7 +317,7 @@ export async function searchAlternatives(
       .replace(/-/g, ' ')
 
     // Search in the category, sorted by nutrition grade
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://world.openfoodfacts.org/cgi/search.pl?` +
       `search_terms=${encodeURIComponent(category)}&` +
       `sort_by=nutrition_grade_fr&` +
@@ -206,9 +325,11 @@ export async function searchAlternatives(
       `json=1`,
       {
         headers: {
-          'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)'
+          'User-Agent': 'FoodCoPilot/1.0 (https://github.com/food-copilot; contact@example.com)',
+          'Accept': 'application/json'
         }
-      }
+      },
+      15000
     )
 
     if (!response.ok) return []
@@ -224,7 +345,7 @@ export async function searchAlternatives(
     for (const product of products) {
       // Skip the same product
       if (product.code === currentBarcode) continue
-      
+
       // Skip products without names or nutriscore
       if (!product.product_name || !product.nutriscore_grade) continue
 
@@ -239,14 +360,14 @@ export async function searchAlternatives(
 
       if ((betterNutri && sameOrBetterNova) || (betterNova && sameOrBetterNutri)) {
         const whyBetter: string[] = []
-        
+
         if (betterNutri) {
           whyBetter.push(`Better NutriScore (${product.nutriscore_grade.toUpperCase()} vs ${currentNutriScore?.toUpperCase() || '?'})`)
         }
         if (betterNova) {
           whyBetter.push(`Less processed (NOVA ${productNova} vs ${currentNova})`)
         }
-        
+
         // Add specific nutrient comparisons if available
         if (product.nutriments) {
           if (product.nutriments.sugars_100g !== undefined && product.nutriments.sugars_100g < 5) {

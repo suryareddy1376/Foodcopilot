@@ -1890,12 +1890,15 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
 export function ThesysUIRenderer({ response }: { response: string }) {
   // Handle empty or invalid response
   if (!response || typeof response !== 'string' || response.trim() === '') {
+    console.log('[ThesysUIRenderer] Empty or invalid response:', response)
     return (
       <div className="text-slate-500 italic">
         No content to display
       </div>
     )
   }
+  
+  console.log('[ThesysUIRenderer] Input response length:', response.length, 'first 300 chars:', response.substring(0, 300))
   
   // Try to parse as Thesys JSON response
   try {
@@ -1976,9 +1979,11 @@ export function ThesysUIRenderer({ response }: { response: string }) {
     // Check if it's valid JSON with component structure
     if (jsonStr.includes('"component"') && jsonStr.includes('"props"')) {
       const parsed = JSON.parse(jsonStr)
+      console.log('[ThesysUIRenderer] Parsed JSON:', JSON.stringify(parsed).substring(0, 500))
       
       // Handle both {component: {...}} and {component: {component: "Card", props: {...}}}
       const rootComponent = parsed.component || parsed
+      console.log('[ThesysUIRenderer] Root component type:', rootComponent?.component)
       
       if (rootComponent && rootComponent.component) {
         return (
@@ -1990,7 +1995,7 @@ export function ThesysUIRenderer({ response }: { response: string }) {
     }
   } catch (e) {
     // Not valid JSON, fall through to markdown rendering
-    console.log('Thesys parse error:', e)
+    console.log('[ThesysUIRenderer] Parse error:', e, 'Input was:', response.substring(0, 500))
   }
 
   // Fallback: render as enhanced markdown

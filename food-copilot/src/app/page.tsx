@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { 
-  Camera, 
-  ScanBarcode, 
-  Send, 
-  Sparkles, 
-  Leaf, 
+import {
+  Camera,
+  ScanBarcode,
+  Send,
+  Sparkles,
+  Leaf,
   ImageIcon,
   Loader2,
   Trash2,
@@ -61,7 +61,7 @@ interface SessionMemory {
 function extractPreferences(message: string, currentMemory: SessionMemory): SessionMemory {
   const newPrefs = [...currentMemory.preferences]
   const lowerMsg = message.toLowerCase()
-  
+
   // Detect preference patterns
   const patterns = [
     { match: /avoid.*(additive|preservative|artificial)/i, pref: 'avoids additives' },
@@ -72,7 +72,7 @@ function extractPreferences(message: string, currentMemory: SessionMemory): Sess
     { match: /sugar|sweet/i, pref: 'monitors sugar' },
     { match: /allerg/i, pref: 'has allergies' },
   ]
-  
+
   for (const { match, pref } of patterns) {
     if (match.test(lowerMsg) && !newPrefs.includes(pref)) {
       newPrefs.push(pref)
@@ -80,7 +80,7 @@ function extractPreferences(message: string, currentMemory: SessionMemory): Sess
       if (newPrefs.length > 2) newPrefs.shift()
     }
   }
-  
+
   // Detect intent
   let intent = currentMemory.lastIntent
   if (/safe.*daily|everyday|regular use/i.test(lowerMsg)) {
@@ -90,7 +90,7 @@ function extractPreferences(message: string, currentMemory: SessionMemory): Sess
   } else if (/child|kid|baby/i.test(lowerMsg)) {
     intent = 'checking safety for children'
   }
-  
+
   return { preferences: newPrefs, lastIntent: intent }
 }
 
@@ -127,12 +127,12 @@ function GenerativeContent({ content, isStreaming }: { content: string; isStream
 }
 
 // Floating Action Button component
-function FloatingActions({ 
-  onScanBarcode, 
+function FloatingActions({
+  onScanBarcode,
   onScanIngredients,
   isExpanded,
-  onToggle 
-}: { 
+  onToggle
+}: {
   onScanBarcode: () => void
   onScanIngredients: () => void
   isExpanded: boolean
@@ -160,15 +160,14 @@ function FloatingActions({
           </button>
         </>
       )}
-      
+
       {/* Main FAB */}
       <button
         onClick={onToggle}
-        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
-          isExpanded 
-            ? 'bg-slate-800 text-white rotate-45' 
-            : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white hover:shadow-emerald-500/30'
-        }`}
+        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${isExpanded
+          ? 'bg-slate-800 text-white rotate-45'
+          : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white hover:shadow-emerald-500/30'
+          }`}
       >
         {isExpanded ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
       </button>
@@ -218,7 +217,7 @@ export default function Home() {
   const [showWhyAINative, setShowWhyAINative] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  
+
   const { user, profile, signOut, isLoading: authLoading } = useAuth()
 
   const scrollToBottom = useCallback(() => {
@@ -231,11 +230,12 @@ export default function Home() {
 
   // Generate AI welcome message on first load
   useEffect(() => {
-    if (!welcomeGenerated && !authLoading && messages.length === 0) {
+    // Only generate welcome if: not already generated, auth loaded, no messages, and NOT currently loading (to prevent race with barcode scan)
+    if (!welcomeGenerated && !authLoading && messages.length === 0 && !isLoading) {
       generateWelcomeMessage()
       setWelcomeGenerated(true)
     }
-  }, [authLoading, welcomeGenerated, messages.length])
+  }, [authLoading, welcomeGenerated, messages.length, isLoading])
 
   const generateId = () => Math.random().toString(36).substring(2, 9)
 
@@ -275,7 +275,7 @@ export default function Home() {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          
+
           const chunk = decoder.decode(value, { stream: true })
           accumulated += chunk
           setStreamingContent(accumulated)
@@ -341,6 +341,47 @@ export default function Home() {
 
   // Stream chat response from Thesys C1 API
   const streamChat = async (message: string, productContext?: any) => {
+    // Handle special action commands
+    if (message === 'scan_barcode') {
+      setShowBarcodeScanner(true)
+      return
+    }
+    if (message === 'scan_ingredients') {
+      setShowIngredientScanner(true)
+      return
+    }
+    if (message === 'enter_barcode') {
+      // Open barcode scanner in manual mode - we'll just open the scanner which has manual input option
+      setShowBarcodeScanner(true)
+      return
+    }
+
+    // IMPORTANT: Check if the message is a barcode pattern and redirect to analyzeBarcode
+    // This catches cases where barcodes are sent via onAskQuestion or other paths
+    const cleanMessage = message.trim()
+    if (/^\d{8,14}$/.test(cleanMessage)) {
+      console.log('[DEBUG] streamChat detected barcode pattern, redirecting to analyzeBarcode:', cleanMessage)
+      await analyzeBarcode(cleanMessage)
+      return
+    }
+
+    // Handle scan:BARCODE format for retry
+    if (message.startsWith('scan:')) {
+      const barcodeToScan = message.substring(5)
+      if (/^\d{8,14}$/.test(barcodeToScan)) {
+        await analyzeBarcode(barcodeToScan)
+        return
+      }
+    }
+    // Handle refresh:BARCODE format for force-refresh from OpenFoodFacts
+    if (message.startsWith('refresh:')) {
+      const barcodeToRefresh = message.substring(8)
+      if (/^\d{8,14}$/.test(barcodeToRefresh)) {
+        await analyzeBarcode(barcodeToRefresh, true) // Pass refresh flag
+        return
+      }
+    }
+
     setIsLoading(true)
     setStreamingContent('')
 
@@ -378,7 +419,7 @@ export default function Home() {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          
+
           const chunk = decoder.decode(value, { stream: true })
           accumulated += chunk
           setStreamingContent(accumulated)
@@ -409,14 +450,15 @@ export default function Home() {
     setIsLoading(false)
   }
 
-  const analyzeBarcode = async (barcode: string) => {
+  const analyzeBarcode = async (barcode: string, forceRefresh: boolean = false) => {
+    console.log('[DEBUG] analyzeBarcode called with:', barcode, 'forceRefresh:', forceRefresh)
     setIsLoading(true)
     setStreamingContent('')
 
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
-      content: `🔍 Scanning barcode: ${barcode}`,
+      content: forceRefresh ? `🔄 Refreshing data for: ${barcode}` : `🔍 Scanning barcode: ${barcode}`,
       type: 'scan'
     }
     setMessages(prev => [...prev, userMessage])
@@ -424,8 +466,14 @@ export default function Home() {
     try {
       // Build URL with user preferences
       let url = `/api/analyze/${barcode}`
+      console.log('[DEBUG] API URL:', url)
+      const params = new URLSearchParams()
+
+      if (forceRefresh) {
+        params.set('refresh', 'true')
+      }
+
       if (profile) {
-        const params = new URLSearchParams()
         if (profile.dietary_restrictions.length > 0) {
           params.set('dietary', profile.dietary_restrictions.join(','))
         }
@@ -435,21 +483,146 @@ export default function Home() {
         if (profile.health_conditions && profile.health_conditions.length > 0) {
           params.set('health', profile.health_conditions.join(','))
         }
-        if (params.toString()) {
-          url += `?${params.toString()}`
-        }
       }
 
+      if (params.toString()) {
+        url += `?${params.toString()}`
+      }
+
+      console.log('[analyzeBarcode] Making fetch to:', url)
       const response = await fetch(url)
+      console.log('[analyzeBarcode] Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        console.error('[analyzeBarcode] Fetch failed with status:', response.status)
+        throw new Error(`API returned ${response.status}: ${response.statusText}`)
+      }
+
       const data = await response.json()
 
+      console.log('[analyzeBarcode] API Response:', {
+        hasError: !!data.error,
+        errorType: data.error,
+        product: data.product,
+        analysisLength: data.analysis?.length,
+        analysisPreview: data.analysis?.substring(0, 500)
+      })
+
       if (data.error) {
+        // Build a helpful error message based on the error type
+        let errorContent: string
+        if (data.error === 'Product not found') {
+          errorContent = JSON.stringify({
+            component: {
+              component: 'Card',
+              props: {
+                children: [
+                  { component: 'Header', props: { title: 'Product Not Found in Database', subtitle: `Barcode: ${barcode}` } },
+                  {
+                    component: 'CalloutV2', props: {
+                      variant: 'info',
+                      title: '💡 You can still analyze this product!',
+                      description: 'The barcode isn\'t in our database, but you can take a photo of the ingredient list and I\'ll analyze it directly using AI.'
+                    }
+                  },
+                  { component: 'TextContent', props: { textMarkdown: '**Why isn\'t this product found?**\n\nThis typically happens with:\n- Regional or local products\n- Newly released items\n- Store-brand products\n- Products from countries with less database coverage' } },
+                  {
+                    component: 'QuickActions', props: {
+                      actions: [
+                        { label: '📷 Scan Ingredient List', action: 'scan-ingredients', variant: 'primary', iconName: 'camera' },
+                        { label: '🔄 Retry Barcode', action: 'scan-barcode', variant: 'secondary', iconName: 'refresh' }
+                      ]
+                    }
+                  },
+                  {
+                    component: 'SuggestionChips', props: {
+                      suggestions: [
+                        { text: 'How does ingredient scanning work?', query: 'How does the ingredient scanner work?' },
+                        { text: 'Add product to database', query: 'How can I add a product to OpenFoodFacts?' }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            error: null
+          })
+        } else if (data.error === 'Network error' || data.error === 'Request timed out') {
+          errorContent = JSON.stringify({
+            component: {
+              component: 'Card',
+              props: {
+                children: [
+                  { component: 'Header', props: { title: 'Connection Issue', subtitle: data.error } },
+                  {
+                    component: 'CalloutV2', props: {
+                      variant: 'warning',
+                      title: '🔌 No connection to food database',
+                      description: 'You can still analyze products by scanning the ingredient list directly - this works offline!'
+                    }
+                  },
+                  { component: 'TextContent', props: { textMarkdown: data.suggestion || 'Please check your internet connection and try again, or use ingredient scanning.' } },
+                  {
+                    component: 'QuickActions', props: {
+                      actions: [
+                        { label: '� Scan Ingredients (Works Offline)', action: 'scan-ingredients', variant: 'primary', iconName: 'camera' },
+                        { label: '� Retry', action: 'ask-question', variant: 'secondary', iconName: 'refresh', data: { question: `scan:${barcode}` } }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            error: null
+          })
+        } else if (data.error === 'Invalid barcode') {
+          errorContent = JSON.stringify({
+            component: {
+              component: 'Card',
+              props: {
+                children: [
+                  { component: 'Header', props: { title: 'Invalid Barcode', subtitle: data.details || 'Please check the barcode format' } },
+                  { component: 'TextContent', props: { textMarkdown: data.suggestion || 'Barcodes are typically 8-14 digits. Please try scanning again or enter manually.' } },
+                  {
+                    component: 'SuggestionChips', props: {
+                      suggestions: [
+                        { text: '🔄 Scan Again', query: 'scan_barcode' },
+                        { text: '⌨️ Enter Manually', query: 'enter_barcode' }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            error: null
+          })
+        } else {
+          errorContent = JSON.stringify({
+            component: {
+              component: 'Card',
+              props: {
+                children: [
+                  { component: 'Header', props: { title: 'Something Went Wrong', subtitle: data.error } },
+                  { component: 'TextContent', props: { textMarkdown: data.suggestion || 'Please try again in a moment.' } },
+                  {
+                    component: 'SuggestionChips', props: {
+                      suggestions: [
+                        { text: '🔄 Try Again', query: `scan:${barcode}` },
+                        { text: '📷 Scan Ingredients', query: 'scan_ingredients' }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            error: null
+          })
+        }
+
         const errorMessage: Message = {
           id: generateId(),
           role: 'assistant',
-          content: data.error === 'Product not found'
-            ? `I couldn't find that product in the database. This might be a regional product or one that hasn't been cataloged yet. Try scanning the ingredient list directly!`
-            : `Something went wrong while looking that up. Want to try again?`
+          content: errorContent
         }
         setMessages(prev => [...prev, errorMessage])
       } else {
@@ -498,11 +671,52 @@ export default function Home() {
           console.log('User not logged in, skipping history save')
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Check if it's a network error
+      const isOffline = !navigator.onLine
+      const errorContent = JSON.stringify({
+        component: {
+          component: 'Card',
+          props: {
+            children: [
+              {
+                component: 'Header', props: {
+                  title: isOffline ? 'No Internet Connection' : 'Connection Error',
+                  subtitle: isOffline ? 'Please check your network' : 'Unable to reach the server'
+                }
+              },
+              {
+                component: 'CalloutV2', props: {
+                  variant: 'info',
+                  title: '📷 Ingredient scanning works offline!',
+                  description: 'Take a photo of the ingredient list and I\'ll analyze it using AI - no database needed.'
+                }
+              },
+              {
+                component: 'TextContent', props: {
+                  textMarkdown: isOffline
+                    ? 'You appear to be offline. Ingredient scanning still works - just take a photo of the ingredient list!'
+                    : "We couldn't connect to the server. Try ingredient scanning as an alternative."
+                }
+              },
+              {
+                component: 'QuickActions', props: {
+                  actions: [
+                    { label: '� Scan Ingredients', action: 'scan-ingredients', variant: 'primary', iconName: 'camera' },
+                    { label: '� Retry Barcode', action: 'scan-barcode', variant: 'secondary', iconName: 'refresh' }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        error: null
+      })
+
       const errorMessage: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `I had trouble connecting. Let's try that again.`
+        content: errorContent
       }
       setMessages(prev => [...prev, errorMessage])
     }
@@ -533,6 +747,7 @@ export default function Home() {
   }
 
   const handleBarcodeScan = (barcode: string) => {
+    console.log('[DEBUG] handleBarcodeScan called with barcode:', barcode, 'length:', barcode.length)
     setShowBarcodeScanner(false)
     analyzeBarcode(barcode)
   }
@@ -571,384 +786,382 @@ export default function Home() {
 
   return (
     <ActionProvider handlers={actionHandlers}>
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50">
-      {/* Minimal Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/70 border-b border-emerald-100/50">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <Leaf className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="font-bold text-base text-slate-800">Food Co-Pilot</h1>
-                <p className="text-xs text-slate-400">AI-Native • Generative UI</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {/* Why AI-Native Button */}
-              <button
-                onClick={() => setShowWhyAINative(true)}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full transition-colors"
-              >
-                <Sparkles className="w-3 h-3" />
-                Why AI-Native?
-              </button>
-
-              {/* Demo Mode Toggle */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full">
-                <span className="text-xs text-slate-500">Demo</span>
-                <button
-                  onClick={() => setDemoMode(!demoMode)}
-                  className={`relative w-8 h-4 rounded-full transition-colors ${demoMode ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${demoMode ? 'translate-x-4' : ''}`} />
-                </button>
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50">
+        {/* Minimal Header */}
+        <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/70 border-b border-emerald-100/50">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <Leaf className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="font-bold text-base text-slate-800">Food Co-Pilot</h1>
+                  <p className="text-xs text-slate-400">AI-Native • Generative UI</p>
+                </div>
               </div>
 
-              {/* History Button */}
-              {user && (
+              <div className="flex items-center gap-2">
+                {/* Why AI-Native Button */}
                 <button
-                  onClick={() => setShowHistory(true)}
-                  className="p-2 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                  title="Scan History"
+                  onClick={() => setShowWhyAINative(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full transition-colors"
                 >
-                  <History className="w-5 h-5" />
+                  <Sparkles className="w-3 h-3" />
+                  Why AI-Native?
                 </button>
-              )}
 
-              {/* Clear Chat */}
-              {messages.length > 1 && (
-                <button
-                  onClick={clearChat}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="New conversation"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              )}
-
-              {/* User Menu / Auth */}
-              {authLoading ? (
-                <div className="w-9 h-9 rounded-full bg-slate-100 animate-pulse" />
-              ) : user ? (
-                <div className="relative">
+                {/* Demo Mode Toggle */}
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full">
+                  <span className="text-xs text-slate-500">Demo</span>
                   <button
-                    onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    onClick={() => setDemoMode(!demoMode)}
+                    className={`relative w-8 h-4 rounded-full transition-colors ${demoMode ? 'bg-emerald-500' : 'bg-slate-300'}`}
                   >
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
-                      {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
-                    </div>
+                    <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${demoMode ? 'translate-x-4' : ''}`} />
                   </button>
+                </div>
 
-                  {/* Dropdown Menu */}
-                  {showUserMenu && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={() => setShowUserMenu(false)}
-                      />
-                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-20">
-                        <div className="px-4 py-2 border-b border-slate-100">
-                          <p className="text-sm font-medium text-slate-800 truncate">
-                            {profile?.display_name || 'User'}
-                          </p>
-                          <p className="text-xs text-slate-500 truncate">
-                            {user.email}
-                          </p>
+                {/* History Button */}
+                {user && (
+                  <button
+                    onClick={() => setShowHistory(true)}
+                    className="p-2 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                    title="Scan History"
+                  >
+                    <History className="w-5 h-5" />
+                  </button>
+                )}
+
+                {/* Clear Chat */}
+                {messages.length > 1 && (
+                  <button
+                    onClick={clearChat}
+                    className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="New conversation"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
+
+                {/* User Menu / Auth */}
+                {authLoading ? (
+                  <div className="w-9 h-9 rounded-full bg-slate-100 animate-pulse" />
+                ) : user ? (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowUserMenu(!showUserMenu)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
+                        {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {showUserMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setShowUserMenu(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-20">
+                          <div className="px-4 py-2 border-b border-slate-100">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {profile?.display_name || 'User'}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {user.email}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => { setShowPreferences(true); setShowUserMenu(false) }}
+                            className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                          >
+                            <Settings className="w-4 h-4" />
+                            Preferences
+                          </button>
+                          <button
+                            onClick={() => { setShowHistory(true); setShowUserMenu(false) }}
+                            className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                          >
+                            <History className="w-4 h-4" />
+                            Scan History
+                          </button>
+                          <hr className="my-2 border-slate-100" />
+                          <button
+                            onClick={() => { signOut(); setShowUserMenu(false) }}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            Sign Out
+                          </button>
                         </div>
-                        <button
-                          onClick={() => { setShowPreferences(true); setShowUserMenu(false) }}
-                          className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
-                        >
-                          <Settings className="w-4 h-4" />
-                          Preferences
-                        </button>
-                        <button
-                          onClick={() => { setShowHistory(true); setShowUserMenu(false) }}
-                          className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
-                        >
-                          <History className="w-4 h-4" />
-                          Scan History
-                        </button>
-                        <hr className="my-2 border-slate-100" />
-                        <button
-                          onClick={() => { signOut(); setShowUserMenu(false) }}
-                          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          Sign Out
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2"
-                >
-                  <User className="w-4 h-4" />
-                </button>
-              )}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2"
+                  >
+                    <User className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Demo Mode Status Bar */}
-      {demoMode && (
-        <div className="bg-amber-50 border-b border-amber-200">
-          <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center gap-2">
-            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-            <span className="text-xs text-amber-700 font-medium">Demo mode on — predictable example flow</span>
+        {/* Demo Mode Status Bar */}
+        {demoMode && (
+          <div className="bg-amber-50 border-b border-amber-200">
+            <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center gap-2">
+              <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+              <span className="text-xs text-amber-700 font-medium">Demo mode on — predictable example flow</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Why AI-Native Modal */}
-      {showWhyAINative && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-violet-500" />
-                  <h2 className="text-lg font-bold text-slate-800">Why Food Co-Pilot is AI-Native</h2>
+        {/* Why AI-Native Modal */}
+        {showWhyAINative && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-violet-500" />
+                    <h2 className="text-lg font-bold text-slate-800">Why Food Co-Pilot is AI-Native</h2>
+                  </div>
+                  <button onClick={() => setShowWhyAINative(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
                 </div>
-                <button onClick={() => setShowWhyAINative(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
-              </div>
-              
-              <p className="text-slate-600 mb-6">
-                Food Co-Pilot is designed as an AI-native experience — not a traditional app with AI added on top.
-              </p>
-              
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Search className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-800 text-sm">Intent-first interaction</h4>
-                    <p className="text-xs text-slate-600 mt-1">
-                      The system infers what you likely care about without forms, filters, or manual configuration.
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <Info className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-800 text-sm">Reasoning-driven guidance</h4>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Instead of listing ingredients, the AI explains why something matters, what tradeoffs exist, and where uncertainty remains.
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <Scale className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-800 text-sm">Decision compression</h4>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Complex food information is reduced into clear, situational guidance to support real-world decisions.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 pt-4 border-t border-slate-200">
-                <p className="text-xs text-slate-400 italic text-center">
-                  This prototype prioritizes reasoning quality and experience design over data completeness.
+
+                <p className="text-slate-600 mb-6">
+                  Food Co-Pilot is designed as an AI-native experience — not a traditional app with AI added on top.
                 </p>
+
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Search className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800 text-sm">Intent-first interaction</h4>
+                      <p className="text-xs text-slate-600 mt-1">
+                        The system infers what you likely care about without forms, filters, or manual configuration.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <Info className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800 text-sm">Reasoning-driven guidance</h4>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Instead of listing ingredients, the AI explains why something matters, what tradeoffs exist, and where uncertainty remains.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                      <Scale className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800 text-sm">Decision compression</h4>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Complex food information is reduced into clear, situational guidance to support real-world decisions.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-slate-200">
+                  <p className="text-xs text-slate-400 italic text-center">
+                    This prototype prioritizes reasoning quality and experience design over data completeness.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Main Content - Pure Conversational UI */}
-      <main className="max-w-4xl mx-auto px-4 pb-32">
-        {/* Messages - ALL content is AI-generated */}
-        <div className="py-6 space-y-6">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`fade-in ${message.role === 'user' ? 'flex justify-end' : ''}`}
-            >
-              {message.role === 'user' ? (
-                <div className="max-w-[85%] bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl rounded-br-md px-5 py-3 shadow-lg shadow-emerald-500/20">
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* Product Context Badge */}
-                  {message.productContext && (
-                    <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur rounded-xl border border-slate-200 shadow-sm">
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-slate-800 block truncate">
-                          {message.productContext.name}
-                        </span>
-                        {message.productContext.brand && (
-                          <span className="text-sm text-slate-500">
-                            by {message.productContext.brand}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {message.productContext.nutriScore && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
-                            getNutriScoreColor(message.productContext.nutriScore)
-                          }`}>
-                            {message.productContext.nutriScore.toUpperCase()}
-                          </span>
-                        )}
-                        {message.productContext.novaGroup && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
-                            getNovaGroupInfo(message.productContext.novaGroup).color
-                          }`}>
-                            NOVA {message.productContext.novaGroup}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* AI Response - Generative Content */}
-                  <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
-                    <GenerativeContent content={message.content} />
+        {/* Main Content - Pure Conversational UI */}
+        <main className="max-w-4xl mx-auto px-4 pb-32">
+          {/* Messages - ALL content is AI-generated */}
+          <div className="py-6 space-y-6">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`fade-in ${message.role === 'user' ? 'flex justify-end' : ''}`}
+              >
+                {message.role === 'user' ? (
+                  <div className="max-w-[85%] bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl rounded-br-md px-5 py-3 shadow-lg shadow-emerald-500/20">
+                    <p className="whitespace-pre-wrap">{message.content}</p>
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Product Context Badge */}
+                    {message.productContext && (
+                      <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-semibold text-slate-800 block truncate">
+                            {message.productContext.name}
+                          </span>
+                          {message.productContext.brand && (
+                            <span className="text-sm text-slate-500">
+                              by {message.productContext.brand}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {message.productContext.nutriScore && (
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNutriScoreColor(message.productContext.nutriScore)
+                              }`}>
+                              {message.productContext.nutriScore.toUpperCase()}
+                            </span>
+                          )}
+                          {message.productContext.novaGroup && (
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNovaGroupInfo(message.productContext.novaGroup).color
+                              }`}>
+                              NOVA {message.productContext.novaGroup}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Response - Generative Content */}
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
+                      <GenerativeContent content={message.content} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Streaming Content */}
+            {streamingContent && (
+              <div className="fade-in space-y-3">
+                <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
+                  <GenerativeContent content={streamingContent} isStreaming={true} />
                 </div>
-              )}
-            </div>
-          ))}
-
-          {/* Streaming Content */}
-          {streamingContent && (
-            <div className="fade-in space-y-3">
-              <div className="bg-white/80 backdrop-blur-md rounded-2xl rounded-tl-md border border-white/50 shadow-lg overflow-hidden">
-                <GenerativeContent content={streamingContent} isStreaming={true} />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Loading indicator */}
-          {isLoading && !streamingContent && (
-            <div className="flex items-center gap-3 text-slate-500 fade-in">
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+            {/* Loading indicator */}
+            {isLoading && !streamingContent && (
+              <div className="flex items-center gap-3 text-slate-500 fade-in">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                </div>
+                <span className="text-sm">Generating response...</span>
               </div>
-              <span className="text-sm">Generating response...</span>
-            </div>
-          )}
+            )}
 
-          <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} />
+          </div>
+        </main>
+
+        {/* Floating Action Button */}
+        <FloatingActions
+          onScanBarcode={() => { setFabExpanded(false); setShowBarcodeScanner(true) }}
+          onScanIngredients={() => { setFabExpanded(false); setShowIngredientScanner(true) }}
+          isExpanded={fabExpanded}
+          onToggle={() => setFabExpanded(!fabExpanded)}
+        />
+
+        {/* Input Area */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-4">
+          <div className="max-w-4xl mx-auto px-4">
+            <form onSubmit={handleSubmit} className="relative">
+              <div className="flex gap-2">
+                {/* Input Field */}
+                <div className="flex-1 relative">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask about any food, ingredient, or paste a barcode..."
+                    className="w-full px-5 py-3.5 pr-12 bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all shadow-lg"
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isLoading || !input.trim()}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
-      </main>
 
-      {/* Floating Action Button */}
-      <FloatingActions
-        onScanBarcode={() => { setFabExpanded(false); setShowBarcodeScanner(true) }}
-        onScanIngredients={() => { setFabExpanded(false); setShowIngredientScanner(true) }}
-        isExpanded={fabExpanded}
-        onToggle={() => setFabExpanded(!fabExpanded)}
-      />
+        {/* Barcode Scanner Modal */}
+        {showBarcodeScanner && (
+          <BarcodeScanner
+            onScan={handleBarcodeScan}
+            onClose={() => setShowBarcodeScanner(false)}
+          />
+        )}
 
-      {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-4">
-        <div className="max-w-4xl mx-auto px-4">
-          <form onSubmit={handleSubmit} className="relative">
-            <div className="flex gap-2">
-              {/* Input Field */}
-              <div className="flex-1 relative">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about any food, ingredient, or paste a barcode..."
-                  className="w-full px-5 py-3.5 pr-12 bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all shadow-lg"
-                  disabled={isLoading}
-                />
-                <button
-                  type="submit"
-                  disabled={isLoading || !input.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg transition-all"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
+        {/* Ingredient Scanner Modal */}
+        {showIngredientScanner && (
+          <IngredientScanner
+            onScan={handleIngredientScan}
+            onClose={() => setShowIngredientScanner(false)}
+          />
+        )}
+
+        {/* Auth Modal */}
+        <AuthModal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+        />
+
+        {/* User Preferences Modal */}
+        <UserPreferences
+          isOpen={showPreferences}
+          onClose={() => setShowPreferences(false)}
+        />
+
+        {/* Scan History Modal */}
+        <ScanHistory
+          isOpen={showHistory}
+          onClose={() => setShowHistory(false)}
+          onRescan={(barcode) => analyzeBarcode(barcode)}
+          onCompare={(items) => {
+            setComparisonItems(items)
+            setShowComparison(true)
+          }}
+        />
+
+        {/* Product Comparison Modal */}
+        <ProductComparison
+          isOpen={showComparison}
+          onClose={() => {
+            setShowComparison(false)
+            setComparisonItems([])
+          }}
+          items={comparisonItems}
+        />
+
+        {/* Toast Notifications */}
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
       </div>
-
-      {/* Barcode Scanner Modal */}
-      {showBarcodeScanner && (
-        <BarcodeScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setShowBarcodeScanner(false)}
-        />
-      )}
-
-      {/* Ingredient Scanner Modal */}
-      {showIngredientScanner && (
-        <IngredientScanner
-          onScan={handleIngredientScan}
-          onClose={() => setShowIngredientScanner(false)}
-        />
-      )}
-
-      {/* Auth Modal */}
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-      />
-
-      {/* User Preferences Modal */}
-      <UserPreferences
-        isOpen={showPreferences}
-        onClose={() => setShowPreferences(false)}
-      />
-
-      {/* Scan History Modal */}
-      <ScanHistory
-        isOpen={showHistory}
-        onClose={() => setShowHistory(false)}
-        onRescan={(barcode) => analyzeBarcode(barcode)}
-        onCompare={(items) => {
-          setComparisonItems(items)
-          setShowComparison(true)
-        }}
-      />
-
-      {/* Product Comparison Modal */}
-      <ProductComparison
-        isOpen={showComparison}
-        onClose={() => {
-          setShowComparison(false)
-          setComparisonItems([])
-        }}
-        items={comparisonItems}
-      />
-
-      {/* Toast Notifications */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-    </div>
     </ActionProvider>
   )
 }

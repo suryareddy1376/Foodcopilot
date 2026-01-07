@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { fetchProductFromOFF, transformOFFProduct, searchAlternatives, AlternativeProduct } from '@/lib/openfoodfacts'
+import { fetchProductFromOFF, transformOFFProduct, searchAlternatives, normalizeBarcode, AlternativeProduct, FetchProductResult } from '@/lib/openfoodfacts'
 import { detectSignals, detectHealthConditionRisks, UserPreferences, UserConflict, HealthConditionRisk } from '@/lib/signals'
 import { getCachedProduct, upsertProduct, createReasoningSession } from '@/lib/supabase'
 
@@ -10,16 +10,17 @@ const client = new OpenAI({
 })
 
 async function getAIAnalysis(
-  productName: string, 
-  brand: string | null, 
-  ingredients: string | null, 
-  signals: any, 
-  novaGroup?: number, 
+  productName: string,
+  brand: string | null,
+  ingredients: string | null,
+  signals: any,
+  novaGroup?: number,
   nutriScore?: string,
   userConflicts?: UserConflict[],
   userPreferences?: UserPreferences | null,
   healthConditionRisks?: HealthConditionRisk[],
-  alternatives?: AlternativeProduct[]
+  alternatives?: AlternativeProduct[],
+  barcode?: string
 ): Promise<string> {
   const signalSummary = signals.signals.length > 0
     ? `Detected signals:\n${signals.signals.map((s: any) => `- ${s.type}: ${s.message}`).join('\n')}`
@@ -32,23 +33,23 @@ async function getAIAnalysis(
 
   // User-specific conflicts section
   const userConflictsSummary = userConflicts && userConflicts.length > 0
-    ? `\n⚠️ USER-SPECIFIC ALERTS (PRIORITIZE THESE):\n${userConflicts.map(c => 
-        `- ${c.severity === 'danger' ? '🚨 ALLERGEN' : '⚠️ DIETARY'}: ${c.description}\n  Found: ${c.evidence.join(', ')}`
-      ).join('\n')}`
+    ? `\n⚠️ USER-SPECIFIC ALERTS (PRIORITIZE THESE):\n${userConflicts.map(c =>
+      `- ${c.severity === 'danger' ? '🚨 ALLERGEN' : '⚠️ DIETARY'}: ${c.description}\n  Found: ${c.evidence.join(', ')}`
+    ).join('\n')}`
     : ''
 
   // Health condition risks section
   const healthRisksSummary = healthConditionRisks && healthConditionRisks.length > 0
-    ? `\n🏥 HEALTH CONDITION ALERTS (INCLUDE HealthRiskAlerts COMPONENT):\n${healthConditionRisks.map(r => 
-        `- ${r.risk.toUpperCase()} RISK for ${r.conditionLabel}: ${r.reason}\n  Recommendation: ${r.recommendation}`
-      ).join('\n')}`
+    ? `\n🏥 HEALTH CONDITION ALERTS (INCLUDE HealthRiskAlerts COMPONENT):\n${healthConditionRisks.map(r =>
+      `- ${r.risk.toUpperCase()} RISK for ${r.conditionLabel}: ${r.reason}\n  Recommendation: ${r.recommendation}`
+    ).join('\n')}`
     : ''
 
   // Alternatives section  
   const alternativesSummary = alternatives && alternatives.length > 0
-    ? `\n💡 HEALTHIER ALTERNATIVES FOUND (INCLUDE AlternativeProducts COMPONENT):\n${alternatives.map(a => 
-        `- ${a.name}${a.brand ? ` by ${a.brand}` : ''} (NutriScore: ${a.nutriScore?.toUpperCase() || '?'}, NOVA: ${a.novaGroup || '?'})\n  Why better: ${a.whyBetter.join(', ')}`
-      ).join('\n')}`
+    ? `\n💡 HEALTHIER ALTERNATIVES FOUND (INCLUDE AlternativeProducts COMPONENT):\n${alternatives.map(a =>
+      `- ${a.name}${a.brand ? ` by ${a.brand}` : ''} (NutriScore: ${a.nutriScore?.toUpperCase() || '?'}, NOVA: ${a.novaGroup || '?'})\n  Why better: ${a.whyBetter.join(', ')}`
+    ).join('\n')}`
     : ''
 
   const userDietInfo = userPreferences && (userPreferences.dietary_restrictions.length > 0 || userPreferences.allergens.length > 0 || (userPreferences.health_conditions && userPreferences.health_conditions.length > 0))
@@ -59,22 +60,26 @@ async function getAIAnalysis(
     : ''
 
   // Determine confidence level based on data completeness
+  // Note: novaGroup can be 0 which is falsy, so use explicit check
   const hasIngredients = !!ingredients && ingredients.length > 10
-  const hasNutriScore = !!nutriScore
-  const hasNovaGroup = !!novaGroup
-  const confidenceLevel = hasIngredients && hasNutriScore && hasNovaGroup ? 'high' 
-    : hasIngredients ? 'medium' 
-    : 'low'
-  
-  const confidenceReason = confidenceLevel === 'high' 
+  const hasNutriScore = !!nutriScore && nutriScore.length > 0
+  const hasNovaGroup = novaGroup !== undefined && novaGroup !== null
+
+  console.log(`[AI Analysis] Data check - ingredients: ${hasIngredients}, nutriscore: ${hasNutriScore} (${nutriScore}), nova: ${hasNovaGroup} (${novaGroup})`)
+
+  const confidenceLevel = hasIngredients && hasNutriScore && hasNovaGroup ? 'high'
+    : hasIngredients ? 'medium'
+      : 'low'
+
+  const confidenceReason = confidenceLevel === 'high'
     ? 'Complete product data available'
     : confidenceLevel === 'medium'
-    ? 'Partial data - some scores unavailable'
-    : 'Limited data - missing key information'
+      ? 'Partial data - some scores unavailable'
+      : 'Limited data - missing key information'
 
   // Check if we should show failure transparency (insufficient data)
   const shouldShowFailure = !hasIngredients && !hasNutriScore && !hasNovaGroup
-  
+
   // If insufficient data, return failure transparency response
   if (shouldShowFailure) {
     return JSON.stringify({
@@ -84,12 +89,18 @@ async function getAIAnalysis(
           children: [
             { component: 'AIInterpretationLabel', props: { label: 'AI-interpreted guidance' } },
             { component: 'Header', props: { title: productName, subtitle: brand ? `by ${brand}` : 'Product Analysis' } },
+            { component: 'ConfidenceIndicator', props: { level: 'low', reason: 'Unable to identify product from barcode - need more information to provide accurate analysis' } },
             { component: 'FailureTransparency', props: {} },
             { component: 'TextContent', props: { textMarkdown: 'Food Co-Pilot avoids guessing when ingredient disclosure is limited. This helps ensure you get reliable guidance.' } },
-            { component: 'SuggestionChips', props: { suggestions: [
-              { text: 'Try another product', query: 'scan another product' },
-              { text: 'Ask about ingredients', query: 'What should I look for in ingredient lists?' }
-            ] } }
+            {
+              component: 'SuggestionChips', props: {
+                suggestions: [
+                  { text: '🔄 Refresh Data', query: barcode ? `refresh:${barcode}` : 'scan another product' },
+                  { text: '📷 Scan Ingredients', query: 'scan_ingredients' },
+                  { text: 'Try another product', query: 'scan another product' }
+                ]
+              }
+            }
           ]
         }
       },
@@ -97,18 +108,21 @@ async function getAIAnalysis(
     })
   }
 
-  const prompt = `Analyze this food product and generate a structured Thesys Generative UI response with reasoning blocks:
+  const prompt = `You are receiving ACTUAL PRODUCT DATA that was already fetched from OpenFoodFacts database. Analyze this food product and generate a structured Thesys Generative UI response with reasoning blocks.
 
-Product: ${productName}${brand ? ` by ${brand}` : ''}
-Ingredients: ${ingredients || 'Not available'}
-NOVA Group: ${novaGroup || 'Unknown'}
-NutriScore: ${nutriScore || 'Unknown'}
+IMPORTANT: You ARE receiving real product data below. DO NOT say you "cannot access" any database or API. The data has already been retrieved for you. Analyze what is provided.
+
+=== PRODUCT DATA (ALREADY FETCHED) ===
+Product Name: ${productName}${brand ? ` by ${brand}` : ''}
+Ingredients: ${ingredients || 'Not disclosed on package'}
+NOVA Group: ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'Not calculated'}
+NutriScore: ${nutriScore || 'Not calculated'}
 ${userDietInfo}
 ${signalSummary}
 ${userConflictsSummary}
 ${healthRisksSummary}
 ${alternativesSummary}
-${flaggedAdditiveSummary ? `Additives of note:\n${flaggedAdditiveSummary}` : ''}
+${flaggedAdditiveSummary ? `Additives of note:\\n${flaggedAdditiveSummary}` : ''}
 
 DATA QUALITY: Confidence ${confidenceLevel} - ${confidenceReason}
 
@@ -188,6 +202,8 @@ IMPORTANT GUIDELINES:
 
   const THESYS_SYSTEM = `You are a health co-pilot that analyzes food products. You MUST respond with Thesys Generative UI JSON format only.
 
+CRITICAL: You will receive ACTUAL PRODUCT DATA that has already been fetched from OpenFoodFacts. NEVER say you "cannot access" databases or APIs. The data is provided directly to you in the user message. Analyze what is given.
+
 Your response must be a valid JSON object with this exact structure:
 {
   "component": {
@@ -259,6 +275,7 @@ CRITICAL RULES:
 9. Output ONLY valid JSON. No markdown, no text before or after.`
 
   try {
+    console.log(`[AI] Calling Thesys API for product: ${productName}`)
     const completion = await client.chat.completions.create({
       model: 'c1/anthropic/claude-sonnet-4/v-20251230',
       messages: [
@@ -268,9 +285,11 @@ CRITICAL RULES:
       stream: false
     })
 
-    return completion.choices[0]?.message?.content || 'Unable to generate analysis.'
-  } catch (error) {
-    console.error('Thesys C1 error:', error)
+    const aiResponse = completion.choices[0]?.message?.content || 'Unable to generate analysis.'
+    console.log(`[AI] Response received, length: ${aiResponse.length}, first 200 chars: ${aiResponse.substring(0, 200)}`)
+    return aiResponse
+  } catch (error: any) {
+    console.error('Thesys C1 error:', error?.message || error)
     return 'Analysis temporarily unavailable. Please try again.'
   }
 }
@@ -286,52 +305,163 @@ export async function GET(
   const dietaryRestrictions = searchParams.get('dietary')?.split(',').filter(Boolean) || []
   const allergens = searchParams.get('allergens')?.split(',').filter(Boolean) || []
   const healthConditions = searchParams.get('health')?.split(',').filter(Boolean) || []
-  
-  const userPreferences: UserPreferences | null = 
+  const forceRefresh = searchParams.get('refresh') === 'true'
+
+  const userPreferences: UserPreferences | null =
     (dietaryRestrictions.length > 0 || allergens.length > 0 || healthConditions.length > 0)
       ? { dietary_restrictions: dietaryRestrictions, allergens, health_conditions: healthConditions }
       : null
 
-  // Validate barcode format
-  if (!/^\d{8,14}$/.test(barcode)) {
+  console.log(`\n${'='.repeat(60)}`)
+  console.log(`[Analyze API] Received request for barcode: ${barcode}`)
+  console.log(`[Analyze API] User preferences:`, userPreferences)
+  console.log(`${'='.repeat(60)}\n`)
+
+  // Clean and validate barcode format
+  const cleanBarcode = barcode.replace(/\D/g, '')
+  if (cleanBarcode.length < 8 || cleanBarcode.length > 14) {
     return NextResponse.json(
-      { error: 'Invalid barcode format' },
+      {
+        error: 'Invalid barcode format',
+        details: `Barcode should be 8-14 digits. Received: ${cleanBarcode.length} digits.`,
+        suggestion: 'Please try scanning again or enter the barcode manually.'
+      },
       { status: 400 }
     )
   }
 
+  // Normalize barcode for database lookup
+  const normalizedBarcode = normalizeBarcode(cleanBarcode)
+
   try {
-    // Step 1: Check cache
-    let product = await getCachedProduct(barcode)
+    // Step 1: Check cache (try both normalized and original barcode)
+    // Skip cache if force refresh is requested
+    console.log(`[Analyze] Processing barcode: ${cleanBarcode}, forceRefresh: ${forceRefresh}`)
+
+    let product = forceRefresh ? null : await getCachedProduct(normalizedBarcode)
+    if (!product && !forceRefresh && normalizedBarcode !== cleanBarcode) {
+      product = await getCachedProduct(cleanBarcode)
+    }
+
+    if (product) {
+      console.log(`[Analyze] Found cached product: ${product.product_name}, ingredients: ${product.ingredients_text?.substring(0, 50)}...`)
+    } else {
+      console.log(`[Analyze] No cached product found for ${cleanBarcode}`)
+    }
+
     let offProduct = null
+
+    // Step 1.5: Check if cached data has incomplete critical fields
+    // If so, force re-fetch from OpenFoodFacts to get updated data
+    if (product) {
+      // Handle case where nutrition_facts_json might be stored as string
+      let nutritionFacts = product.nutrition_facts_json || {}
+      if (typeof nutritionFacts === 'string') {
+        try {
+          nutritionFacts = JSON.parse(nutritionFacts)
+        } catch (e) {
+          nutritionFacts = {}
+        }
+      }
+
+      const hasIngredients = !!product.ingredients_text && product.ingredients_text.length > 10
+      const hasNutriScore = !!nutritionFacts.nutriscore && nutritionFacts.nutriscore.length > 0
+      // nova_group can be 0 which is valid, so check for undefined/null explicitly
+      const hasNovaGroup = nutritionFacts.nova_group !== undefined && nutritionFacts.nova_group !== null
+
+      console.log(`[Analyze] Cache data check - ingredients: ${hasIngredients}, nutriscore: ${hasNutriScore} (${nutritionFacts.nutriscore}), nova: ${hasNovaGroup} (${nutritionFacts.nova_group})`)
+
+      // If missing critical data, try to refresh from source
+      if (!hasIngredients || !hasNutriScore || !hasNovaGroup) {
+        console.log(`[Analyze] Cached product ${cleanBarcode} has incomplete data, refreshing from OFF...`)
+        product = null // Force re-fetch
+      }
+    }
 
     // Step 2: Fetch from Open Food Facts if not cached
     if (!product) {
-      offProduct = await fetchProductFromOFF(barcode)
-      
-      if (!offProduct) {
+      console.log(`[Analyze] Fetching from OpenFoodFacts...`)
+      const fetchResult = await fetchProductFromOFF(cleanBarcode)
+
+      if (!fetchResult.product) {
+        // Return detailed error based on what went wrong
+        const errorResponses: Record<string, { message: string; suggestion: string; status: number }> = {
+          'not_found': {
+            message: 'Product not found',
+            suggestion: 'This product may not be in the OpenFoodFacts database. Try scanning the ingredient list directly, or contribute by adding this product to OpenFoodFacts!',
+            status: 404
+          },
+          'network_error': {
+            message: 'Network error',
+            suggestion: 'Please check your internet connection and try again.',
+            status: 503
+          },
+          'timeout': {
+            message: 'Request timed out',
+            suggestion: 'The server is taking too long to respond. Please try again in a moment.',
+            status: 504
+          },
+          'invalid_barcode': {
+            message: 'Invalid barcode',
+            suggestion: fetchResult.message || 'Please check the barcode and try again.',
+            status: 400
+          },
+          'server_error': {
+            message: 'Server error',
+            suggestion: 'OpenFoodFacts is experiencing issues. Please try again later.',
+            status: 502
+          }
+        }
+
+        const errorInfo = errorResponses[fetchResult.error || 'not_found']
+
         return NextResponse.json(
-          { error: 'Product not found' },
-          { status: 404 }
+          {
+            error: errorInfo.message,
+            details: fetchResult.message,
+            suggestion: errorInfo.suggestion,
+            barcode: cleanBarcode
+          },
+          { status: errorInfo.status }
         )
       }
 
+      offProduct = fetchResult.product
+      console.log(`[Analyze] OFF product received: ${offProduct.product_name}, nutriscore: ${offProduct.nutriscore_grade}, nova: ${offProduct.nova_group}`)
+
       // Transform and cache
       const transformed = transformOFFProduct(offProduct)
+      console.log(`[Analyze] Transformed product - nutriscore: ${transformed.nutrition_facts_json?.nutriscore}, nova: ${transformed.nutrition_facts_json?.nova_group}`)
+
       product = await upsertProduct(transformed)
 
       if (!product) {
+        console.log(`[Analyze] Cache upsert failed, using in-memory data`)
         // If cache fails, continue with in-memory data
         product = {
           id: 'temp',
           ...transformed,
           last_synced_at: new Date().toISOString()
         }
+      } else {
+        console.log(`[Analyze] Product cached successfully with id: ${product.id}`)
       }
     }
 
     // Step 3: Detect signals
-    const nutritionFacts = product.nutrition_facts_json || {}
+    // Handle case where nutrition_facts_json might be stored as string in database
+    let nutritionFacts = product.nutrition_facts_json || {}
+    if (typeof nutritionFacts === 'string') {
+      try {
+        nutritionFacts = JSON.parse(nutritionFacts)
+      } catch (e) {
+        console.error('[Analyze] Failed to parse nutrition_facts_json:', e)
+        nutritionFacts = {}
+      }
+    }
+
+    console.log(`[Analyze] Product data - name: ${product.product_name}, ingredients length: ${product.ingredients_text?.length || 0}, nutriscore: ${nutritionFacts.nutriscore}, nova: ${nutritionFacts.nova_group}`)
+
     const signals = detectSignals(
       product.ingredients_text,
       nutritionFacts.additives_tags || [],
@@ -341,24 +471,24 @@ export async function GET(
     )
 
     // Step 3.5: Detect health condition risks
-    const healthConditionRisks = userPreferences?.health_conditions 
+    const healthConditionRisks = userPreferences?.health_conditions
       ? detectHealthConditionRisks(
-          nutritionFacts.nutriments || null,
-          product.ingredients_text,
-          userPreferences.health_conditions
-        )
+        nutritionFacts.nutriments || null,
+        product.ingredients_text,
+        userPreferences.health_conditions
+      )
       : []
 
     // Step 3.6: Search for healthier alternatives (in parallel with AI)
     const categoriesTags = nutritionFacts.categories || []
     const alternativesPromise = categoriesTags.length > 0
       ? searchAlternatives(
-          categoriesTags,
-          nutritionFacts.nutriscore || null,
-          nutritionFacts.nova_group || null,
-          barcode,
-          3
-        )
+        categoriesTags,
+        nutritionFacts.nutriscore || null,
+        nutritionFacts.nova_group || null,
+        barcode,
+        3
+      )
       : Promise.resolve([])
 
     // Step 4: Get AI analysis using Thesys C1
@@ -373,7 +503,8 @@ export async function GET(
         signals.userConflicts,
         userPreferences,
         healthConditionRisks,
-        await alternativesPromise
+        await alternativesPromise,
+        cleanBarcode
       ),
       alternativesPromise
     ])
@@ -384,13 +515,15 @@ export async function GET(
         product_id: product.id,
         detected_signals_json: { signals: signals.signals, flagged: signals.flaggedAdditives, healthRisks: healthConditionRisks },
         ai_explanation: aiResult,
-        uncertainty_notes: signals.summary.hasDebatedIngredients 
+        uncertainty_notes: signals.summary.hasDebatedIngredients
           ? 'Contains ingredients under ongoing scientific review'
           : null
       }).catch(err => console.error('Failed to save reasoning session:', err))
     }
 
     // Return response
+    console.log(`[Analyze] Returning response - product: ${product.product_name}, analysis length: ${aiResult?.length || 0}`)
+
     return NextResponse.json({
       product: {
         barcode: product.barcode,

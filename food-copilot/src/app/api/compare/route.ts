@@ -24,10 +24,10 @@ async function getProductData(barcode: string): Promise<ProductData | null> {
   
   if (!product) {
     // Fetch from Open Food Facts
-    const offProduct = await fetchProductFromOFF(barcode)
-    if (!offProduct) return null
+    const fetchResult = await fetchProductFromOFF(barcode)
+    if (!fetchResult.product) return null
     
-    const transformed = transformOFFProduct(offProduct)
+    const transformed = transformOFFProduct(fetchResult.product)
     product = await upsertProduct(transformed)
     
     if (!product) {

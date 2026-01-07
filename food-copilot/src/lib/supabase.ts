@@ -60,19 +60,32 @@ export interface ReasoningSession {
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000
 
 export async function getCachedProduct(barcode: string): Promise<Product | null> {
+  console.log(`[Supabase] Looking up product: ${barcode}`)
+  
   const { data, error } = await supabase
     .from('products')
     .select('*')
     .eq('barcode', barcode)
     .single()
 
-  if (error || !data) return null
+  if (error) {
+    console.log(`[Supabase] Lookup error for ${barcode}:`, error.message)
+    return null
+  }
+  
+  if (!data) {
+    console.log(`[Supabase] No data found for ${barcode}`)
+    return null
+  }
+
+  console.log(`[Supabase] Found product: ${data.product_name}, nutrition_facts_json type: ${typeof data.nutrition_facts_json}`)
 
   // Check if cache is still valid
   const lastSynced = new Date(data.last_synced_at).getTime()
   const now = Date.now()
   
   if (now - lastSynced > CACHE_DURATION_MS) {
+    console.log(`[Supabase] Cache expired for ${barcode}`)
     return null // Cache expired
   }
 
