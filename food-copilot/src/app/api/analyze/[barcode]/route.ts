@@ -4,8 +4,14 @@ import { fetchProductFromOFF, transformOFFProduct, searchAlternatives, normalize
 import { detectSignals, detectHealthConditionRisks, UserPreferences, UserConflict, HealthConditionRisk } from '@/lib/signals'
 import { getCachedProduct, upsertProduct, createReasoningSession } from '@/lib/supabase'
 
+// Validate API key exists
+const THESYS_API_KEY = process.env.THESYS_API_KEY
+if (!THESYS_API_KEY) {
+  console.warn('⚠️ THESYS_API_KEY not configured - AI analysis will fail')
+}
+
 const client = new OpenAI({
-  apiKey: process.env.THESYS_API_KEY,
+  apiKey: THESYS_API_KEY || 'missing-key',
   baseURL: 'https://api.thesys.dev/v1/embed'
 })
 
@@ -297,8 +303,29 @@ RULES:
       stream: false
     })
 
-    const aiResponse = completion.choices[0]?.message?.content || 'Unable to generate analysis.'
+    let aiResponse = completion.choices[0]?.message?.content || 'Unable to generate analysis.'
     console.log(`[AI] Response received, length: ${aiResponse.length}, first 200 chars: ${aiResponse.substring(0, 200)}`)
+    
+    // Clean up the response - handle <content thesys="true"> wrapper and HTML entities
+    // Strip content wrapper if present
+    const contentMatch = aiResponse.match(/<content\s+thesys="true">\s*([\s\S]*?)\s*<\/content>/i)
+    if (contentMatch) {
+      aiResponse = contentMatch[1]
+    } else if (aiResponse.includes('<content')) {
+      aiResponse = aiResponse.replace(/<\/?content[^>]*>/gi, '')
+    }
+    
+    // Decode HTML entities
+    aiResponse = aiResponse
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .trim()
+    
+    console.log(`[AI] Cleaned response, length: ${aiResponse.length}, first 200 chars: ${aiResponse.substring(0, 200)}`)
     return aiResponse
   } catch (error: any) {
     console.error('Thesys C1 error:', error?.message || error)
@@ -492,6 +519,7 @@ export async function GET(
       : []
 
     // Step 3.6: Search for healthier alternatives (in parallel with AI)
+    // Wrap in try-catch to prevent timeouts from affecting the main response
     const categoriesTags = nutritionFacts.categories || []
     const alternativesPromise = categoriesTags.length > 0
       ? searchAlternatives(
@@ -500,8 +528,11 @@ export async function GET(
         nutritionFacts.nova_group || null,
         barcode,
         3
-      )
-      : Promise.resolve([])
+      ).catch(err => {
+        console.warn('Alternatives search failed (non-blocking):', err?.message || err)
+        return [] as AlternativeProduct[]
+      })
+      : Promise.resolve([] as AlternativeProduct[])
 
     // Step 4: Get AI analysis using Thesys C1
     const [aiResult, alternatives] = await Promise.all([
