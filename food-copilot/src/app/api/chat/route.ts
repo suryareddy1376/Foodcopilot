@@ -184,6 +184,32 @@ export async function POST(request: Request) {
       })
     }
 
+    // Check if message is a barcode - redirect to use analyze endpoint instead
+    const cleanMessage = message.trim()
+    if (/^\d{8,14}$/.test(cleanMessage)) {
+      console.log(`[Chat] Detected barcode pattern: ${cleanMessage}, returning redirect response`)
+      const redirectResponse = JSON.stringify({
+        component: {
+          component: 'Card',
+          props: {
+            children: [
+              { component: 'AIInterpretationLabel', props: { label: 'AI Interpretation' } },
+              { component: 'Header', props: { title: 'Barcode Detected', subtitle: `Code: ${cleanMessage}` } },
+              { component: 'TextContent', props: { textMarkdown: 'I detected a barcode! Let me analyze this product for you. Please use the **Scan Barcode** button to get full product analysis with ingredients, nutrition, and health insights.' } },
+              { component: 'SuggestionChips', props: { suggestions: [
+                { text: '🔍 Scan This Barcode', query: `scan:${cleanMessage}` },
+                { text: '📷 Scan Ingredients Instead', query: 'scan_ingredients' }
+              ]}}
+            ]
+          }
+        },
+        error: null
+      })
+      return new Response(redirectResponse, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+      })
+    }
+
     // Build messages array
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: isWelcome ? WELCOME_PROMPT : SYSTEM_PROMPT }
