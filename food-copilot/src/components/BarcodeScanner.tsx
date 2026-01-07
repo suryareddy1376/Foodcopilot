@@ -176,7 +176,7 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
         stopScanner()
       }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   const retry = async () => {
     setError(null)

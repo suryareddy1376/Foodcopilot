@@ -1078,7 +1078,7 @@ function ProductHero({
   )
 }
 
-// Quick Insights Bar - Fast key facts
+// Quick Insights Bar - Fast key facts (matches screenshot style)
 function QuickInsights({ 
   insights 
 }: { 
@@ -1088,23 +1088,30 @@ function QuickInsights({
 
   const getSentimentStyle = (sentiment?: string) => {
     switch (sentiment) {
-      case 'good': return 'bg-emerald-50 border-emerald-200 text-emerald-700'
-      case 'bad': return 'bg-red-50 border-red-200 text-red-700'
-      default: return 'bg-slate-50 border-slate-200 text-slate-700'
+      case 'good': return { bg: 'bg-white', border: 'border-emerald-200', valueColor: 'text-emerald-600', iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' }
+      case 'bad': return { bg: 'bg-white', border: 'border-red-200', valueColor: 'text-red-600', iconBg: 'bg-red-100', iconColor: 'text-red-600' }
+      default: return { bg: 'bg-white', border: 'border-slate-200', valueColor: 'text-slate-700', iconBg: 'bg-slate-100', iconColor: 'text-slate-600' }
     }
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 my-4">
-      {insights.map((insight, i) => (
-        <div key={i} className={`p-3 rounded-xl border ${getSentimentStyle(insight.sentiment)}`}>
-          <div className="flex items-center gap-2 mb-1">
-            {renderIcon(insight.icon, 'w-4 h-4 opacity-70')}
-            <span className="text-xs font-medium opacity-70">{insight.label}</span>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 my-4">
+      {insights.map((insight, i) => {
+        const style = getSentimentStyle(insight.sentiment)
+        return (
+          <div key={i} className={`${style.bg} ${style.border} border rounded-xl p-4 shadow-sm`}>
+            <div className="flex items-start gap-3">
+              <div className={`w-10 h-10 rounded-xl ${style.iconBg} flex items-center justify-center flex-shrink-0`}>
+                {renderIcon(insight.icon, `w-5 h-5 ${style.iconColor}`)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`font-bold text-lg ${style.valueColor} leading-tight`}>{insight.value}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{insight.label}</p>
+              </div>
+            </div>
           </div>
-          <p className="font-semibold text-sm">{insight.value}</p>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1222,9 +1229,9 @@ function IngredientSpotlight({
     learnMoreQuery?: string
   }>
 }) {
-  if (!ingredients || ingredients.length === 0) return null
-
   const handlers = useActionHandlers()
+
+  if (!ingredients || ingredients.length === 0) return null
 
   const getCategoryConfig = (category: string) => {
     switch (category) {
@@ -1339,9 +1346,9 @@ function ContextualActions({
     variant?: 'primary' | 'secondary'
   }>
 }) {
-  if (!actions || actions.length === 0) return null
-
   const handlers = useActionHandlers()
+
+  if (!actions || actions.length === 0) return null
 
   const handleAction = (action: typeof actions[0]) => {
     switch (action.action) {
@@ -2606,3 +2613,5 @@ function MarkdownRenderer({ content }: { content: string }) {
 
 export default ThesysUIRenderer
 export { ActionProvider }
+
+

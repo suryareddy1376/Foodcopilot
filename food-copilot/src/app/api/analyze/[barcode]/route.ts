@@ -127,11 +127,11 @@ async function getAIAnalysis(
     })
   }
 
-  const prompt = `You are analyzing ACTUAL PRODUCT DATA from OpenFoodFacts database. Generate a comprehensive, structured Thesys Generative UI response.
+  const prompt = `You are analyzing ACTUAL PRODUCT DATA from OpenFoodFacts database. Generate a structured Thesys Generative UI response that matches the AI-native design pattern.
 
-CRITICAL: This is REAL DATA already fetched. Analyze it directly - do NOT say you "cannot access" anything.
+CRITICAL: This is REAL DATA already fetched. Analyze it directly.
 
-=== PRODUCT DATA (ALREADY FETCHED FROM OPENFOODFACTS) ===
+=== PRODUCT DATA ===
 Product Name: ${productName}${brand ? ` by ${brand}` : ''}
 Ingredients: ${ingredients || 'Not disclosed on package'}
 NOVA Group: ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'Not available'} (1=Minimally processed, 4=Ultra-processed)
@@ -145,174 +145,146 @@ ${flaggedAdditiveSummary ? `Additives of note:\\n${flaggedAdditiveSummary}` : ''
 
 DATA QUALITY: Confidence ${confidenceLevel} - ${confidenceReason}
 
-=== REQUIRED OUTPUT STRUCTURE (AI-NATIVE FORMAT) ===
+=== REQUIRED OUTPUT STRUCTURE (EXACT ORDER) ===
 
-Generate a Card containing these components IN THIS ORDER:
+Generate a Card with children in THIS EXACT ORDER:
 
-1. **AIInterpretationLabel** - Always start with this
-   {"component": "AIInterpretationLabel", "props": {"label": "AI-Powered Analysis"}}
+1. **AIInterpretationLabel**
+   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
 
-2. **ProductHero** - Product header with scores (REQUIRED)
-   {"component": "ProductHero", "props": {
-     "name": "${productName}",
-     "brand": ${brand ? `"${brand}"` : 'null'},
-     "nutriScore": ${nutriScore ? `"${nutriScore}"` : 'null'},
-     "novaGroup": ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'null'},
-     "barcode": "${barcode}"
-   }}
+2. **IntentInference** - State what you think user wants to know
+   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know if ${productName} is a healthy choice and how it fits into a balanced diet."}}
 
-3. **IntentInference** - State inferred intent upfront
-   {"component": "IntentInference", "props": {"intent": "You're likely wondering if this product is safe for regular consumption and whether it aligns with your health goals."}}
+3. **Header** - Simple product title
+   {"component": "Header", "props": {"title": "${productName} Analysis", "subtitle": "${brand ? `${brand} product` : 'Product analysis'}"}}
 
-4. **ConfidenceIndicator** - Show data confidence
+4. **ConfidenceIndicator**
    {"component": "ConfidenceIndicator", "props": {"level": "${confidenceLevel}", "reason": "${confidenceReason}"}}
 
-5. **QuickInsights** - Key facts at a glance (generate 3-4 insights)
+5. **QuickInsights** - 3 key metric cards
    {"component": "QuickInsights", "props": {"insights": [
-     {"icon": "activity", "label": "Processing Level", "value": "NOVA X - Description", "sentiment": "good|neutral|bad"},
-     {"icon": "star", "label": "Nutrition Grade", "value": "NutriScore X", "sentiment": "good|neutral|bad"},
-     {"icon": "beaker", "label": "Additives", "value": "X flagged", "sentiment": "good|neutral|bad"}
+     {"icon": "flame", "label": "Calories per serving", "value": "~XXX kcal", "sentiment": "neutral"},
+     {"icon": "droplets", "label": "Fat content", "value": "Xg per serving", "sentiment": "neutral|bad"},
+     {"icon": "activity", "label": "Processing level", "value": "NOVA ${novaGroup !== undefined && novaGroup !== null ? novaGroup : '?'}", "sentiment": "${novaGroup && novaGroup <= 2 ? 'good' : novaGroup === 3 ? 'neutral' : 'bad'}"}
    ]}}
 
-6. **HealthRiskAlerts** (ONLY if health risks detected in data above)
-
-7. **KeyFindings** - Structured findings (generate 3-5 findings)
-   {"component": "KeyFindings", "props": {"findings": [
-     {"type": "positive", "title": "Finding title", "detail": "Detailed explanation"},
-     {"type": "warning", "title": "Caution area", "detail": "What to watch out for"},
-     {"type": "negative", "title": "Concern", "detail": "Why this matters"}
-   ]}}
-   Types: positive (green), warning (yellow), negative (red), neutral (gray)
-
-8. **IngredientSpotlight** - Highlight 2-4 notable ingredients
-   {"component": "IngredientSpotlight", "props": {"ingredients": [
-     {"name": "Ingredient Name", "category": "concern|beneficial|neutral|additive", "reason": "Why it matters", "learnMoreQuery": "Tell me about X"}
+6. **ReasoningBlocks** - Show your thinking process (4 blocks)
+   {"component": "ReasoningBlocks", "props": {"blocks": [
+     {"type": "thinking", "content": "What I think you care about: [your analysis of user intent]"},
+     {"type": "why-matters", "content": "Why this matters: [health implications]"},
+     {"type": "tradeoffs", "content": "Tradeoffs to consider: [pros and cons]"},
+     {"type": "uncertainty", "content": "Uncertainty: [what we don't know]"}
    ]}}
 
-9. **AISummarySection** - Your synthesized assessment
-   {"component": "AISummarySection", "props": {
-     "title": "My Assessment",
-     "summary": "2-3 sentence synthesis of your overall analysis and recommendation",
-     "icon": "sparkles"
+7. **DecisionVerdict** - Clear verdict (REQUIRED)
+   {"component": "DecisionVerdict", "props": {
+     "verdict": "safe|occasional|avoid",
+     "summary": "One clear sentence explaining the recommendation"
    }}
+   Rules:
+   - "safe" = NOVA 1-2, NutriScore A-B
+   - "occasional" = NOVA 3-4, NutriScore C-D
+   - "avoid" = Contains allergens OR harmful
 
-10. **ReasoningBlocks** - Show structured thinking
-    {"component": "ReasoningBlocks", "props": {"blocks": [
-      {"type": "thinking", "content": "What you're likely concerned about..."},
-      {"type": "why-matters", "content": "Why this matters for your health..."},
-      {"type": "tradeoffs", "content": "The benefits vs concerns..."},
-      {"type": "bottom-line", "content": "My recommendation..."}
-    ]}}
+8. **DecisionSummaryStrip** - One-line summary
+   {"component": "DecisionSummaryStrip", "props": {"primaryReason": "Main reason for verdict", "verdict": "okay occasionally|safe daily|avoid"}}
 
-11. **DecisionVerdict** - REQUIRED clear verdict
-    {"component": "DecisionVerdict", "props": {
-      "verdict": "safe|occasional|avoid",
-      "summary": "Clear one-sentence explanation"
+9. **TagBlock** - Category tags
+   {"component": "TagBlock", "props": {"children": [
+     {"text": "Tag 1", "variant": "warning|success|error|info"},
+     {"text": "Tag 2", "variant": "warning|success|error|info"}
+   ]}}
+
+10. **UncertaintyDisclosure** - What we don't know
+    {"component": "UncertaintyDisclosure", "props": {"items": ["Item 1", "Item 2"]}}
+
+11. **MomentQuestion** - Contextual clarification
+    {"component": "MomentQuestion", "props": {
+      "question": "Are you thinking of having this as a snack or part of a meal?",
+      "options": [
+        {"label": "Occasional snack", "query": "Is ${productName} okay as an occasional snack?"},
+        {"label": "Regular meal", "query": "Can I have ${productName} regularly?"}
+      ]
     }}
-    Rules:
-    - "safe" (🟢): NOVA 1-2, NutriScore A-B, minimal additives
-    - "occasional" (🟡): NOVA 3-4, NutriScore C-D, processed but not harmful
-    - "avoid" (🔴): Contains user's allergens OR genuinely harmful
 
-12. **UncertaintyDisclosure** - What we don't know (2-3 items)
-    {"component": "UncertaintyDisclosure", "props": {"items": [
-      "What we cannot verify or determine from available data"
-    ]}}
-
-13. **AlternativeProducts** (ONLY if alternatives provided in data above)
-
-14. **ContextualActions** - Smart next steps
-    {"component": "ContextualActions", "props": {"actions": [
-      {"label": "Find Healthier Options", "description": "Compare with alternatives", "icon": "trending-up", "action": "ask-question", "query": "Show me healthier alternatives to ${productName}", "variant": "primary"},
-      {"label": "Scan Another", "description": "Check a different product", "icon": "scan-barcode", "action": "scan-barcode", "variant": "secondary"}
-    ]}}
-
-15. **SuggestionChips** - Follow-up questions
+12. **SuggestionChips** - Follow-up questions
     {"component": "SuggestionChips", "props": {"suggestions": [
-      {"text": "Is this safe for children?", "query": "Is ${productName} safe for children?"},
-      {"text": "Explain the additives", "query": "Explain each additive in ${productName}"},
-      {"text": "Daily intake limits", "query": "How much of ${productName} is safe per day?"}
+      {"text": "Healthier alternatives", "query": "What are healthier alternatives to ${productName}?"},
+      {"text": "Detailed nutrition", "query": "Show detailed nutrition for ${productName}"},
+      {"text": "Portion control", "query": "What's a healthy portion of ${productName}?"}
     ]}}
 
-OUTPUT ONLY VALID JSON with this exact wrapper:
+13. **FeedbackRow** - User feedback
+    {"component": "FeedbackRow", "props": {}}
+
+OUTPUT ONLY VALID JSON:
 {
   "component": {
     "component": "Card",
     "props": {
-      "children": [... all components above ...]
+      "children": [... all 13 components above ...]
     }
   },
   "error": null
 }`
 
-  const THESYS_SYSTEM = `You are an AI Health Co-Pilot that analyzes food products using structured, AI-native interfaces. You MUST respond with Thesys Generative UI JSON format only.
+  const THESYS_SYSTEM = `You are an AI Health Co-Pilot that analyzes food products. Output ONLY valid Thesys Generative UI JSON.
 
-CRITICAL: You will receive ACTUAL PRODUCT DATA already fetched from OpenFoodFacts. NEVER say you "cannot access" anything. Analyze the data provided directly.
-
-Your response must be a valid JSON object:
+Your response must be valid JSON:
 {
   "component": {
     "component": "Card",
     "props": {
-      "children": [... components array ...]
+      "children": [... components ...]
     }
   },
   "error": null
 }
 
-=== AI-NATIVE STRUCTURED COMPONENTS ===
+=== AVAILABLE COMPONENTS ===
 
-**ProductHero** - Rich product header with visual scores
-{"component": "ProductHero", "props": {
-  "name": "Product Name", "brand": "Brand or null", 
-  "nutriScore": "a|b|c|d|e or null", "novaGroup": 1-4 or null, "barcode": "123"
-}}
+1. AIInterpretationLabel - {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
 
-**QuickInsights** - At-a-glance key facts (3-4 insights)
-{"component": "QuickInsights", "props": {"insights": [
-  {"icon": "activity|star|beaker|heart", "label": "Label", "value": "Value", "sentiment": "good|neutral|bad"}
-]}}
+2. IntentInference - {"component": "IntentInference", "props": {"intent": "What I think you're asking..."}}
 
-**KeyFindings** - Structured analysis findings
-{"component": "KeyFindings", "props": {"findings": [
-  {"type": "positive|negative|warning|neutral", "title": "Finding", "detail": "Explanation"}
-]}}
+3. Header - {"component": "Header", "props": {"title": "Title", "subtitle": "Subtitle"}}
 
-**IngredientSpotlight** - Notable ingredients
-{"component": "IngredientSpotlight", "props": {"ingredients": [
-  {"name": "Name", "category": "concern|beneficial|neutral|additive", "reason": "Why notable", "learnMoreQuery": "Question"}
-]}}
+4. ConfidenceIndicator - {"component": "ConfidenceIndicator", "props": {"level": "high|medium|low", "reason": "Why"}}
 
-**AISummarySection** - Your synthesized assessment
-{"component": "AISummarySection", "props": {"title": "My Assessment", "summary": "2-3 sentence synthesis", "icon": "sparkles"}}
+5. QuickInsights - Key metrics in cards
+   {"component": "QuickInsights", "props": {"insights": [
+     {"icon": "flame|droplets|activity|star|beaker", "label": "Label", "value": "Value", "sentiment": "good|neutral|bad"}
+   ]}}
 
-**ContextualActions** - Smart next actions
-{"component": "ContextualActions", "props": {"actions": [
-  {"label": "Action", "description": "What it does", "icon": "icon-name", "action": "scan-barcode|scan-ingredients|ask-question", "query": "optional query", "variant": "primary|secondary"}
-]}}
+6. ReasoningBlocks - Structured thinking
+   {"component": "ReasoningBlocks", "props": {"blocks": [
+     {"type": "thinking|why-matters|tradeoffs|uncertainty", "content": "Content"}
+   ]}}
 
-**DecisionVerdict** - REQUIRED clear verdict
-{"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "One sentence"}}
-- safe (🟢): NOVA 1-2, NutriScore A-B, minimal processing
-- occasional (🟡): NOVA 3-4, NutriScore C-D, processed but not harmful  
-- avoid (🔴): Contains user allergens OR genuinely harmful
+7. DecisionVerdict - Clear verdict (REQUIRED)
+   {"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "Explanation"}}
 
-**Additional Components**:
-- AIInterpretationLabel, IntentInference, ConfidenceIndicator
-- ReasoningBlocks (blocks array with type: thinking|why-matters|tradeoffs|bottom-line)
-- UncertaintyDisclosure (items array)
-- HealthRiskAlerts (alerts array - USE ONLY if health risks detected)
-- AlternativeProducts (alternatives array - USE ONLY if alternatives provided)
-- SuggestionChips (suggestions array with text and query)
+8. DecisionSummaryStrip - One-line summary
+   {"component": "DecisionSummaryStrip", "props": {"primaryReason": "Reason", "verdict": "verdict text"}}
 
-CRITICAL RULES:
-1. Use ProductHero (not plain Header) for product display
-2. ALWAYS include QuickInsights, KeyFindings, AISummarySection
-3. ALWAYS include DecisionVerdict with appropriate verdict
-4. ALWAYS include ContextualActions for next steps
-5. Include HealthRiskAlerts ONLY if health condition risks are in the data
-6. Include AlternativeProducts ONLY if alternatives are provided
-7. Output ONLY valid JSON - no markdown, no text before/after`
+9. TagBlock - Category tags
+   {"component": "TagBlock", "props": {"children": [{"text": "Tag", "variant": "success|warning|error|info"}]}}
+
+10. UncertaintyDisclosure - {"component": "UncertaintyDisclosure", "props": {"items": ["Item 1", "Item 2"]}}
+
+11. MomentQuestion - Context check
+    {"component": "MomentQuestion", "props": {"question": "Question?", "options": [{"label": "Option", "query": "Query"}]}}
+
+12. SuggestionChips - Follow-ups
+    {"component": "SuggestionChips", "props": {"suggestions": [{"text": "Text", "query": "Query"}]}}
+
+13. FeedbackRow - {"component": "FeedbackRow", "props": {}}
+
+RULES:
+- Output ONLY valid JSON, no markdown
+- Follow the exact component order from the user prompt
+- DecisionVerdict is REQUIRED
+- Use appropriate sentiments: good (green), neutral (gray), bad (red)`
 
   try {
     console.log(`[AI] Calling Thesys API for product: ${productName}`)
