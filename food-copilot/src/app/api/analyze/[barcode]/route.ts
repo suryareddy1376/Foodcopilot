@@ -87,20 +87,39 @@ async function getAIAnalysis(
         component: 'Card',
         props: {
           children: [
-            { component: 'AIInterpretationLabel', props: { label: 'AI-interpreted guidance' } },
-            { component: 'Header', props: { title: productName, subtitle: brand ? `by ${brand}` : 'Product Analysis' } },
-            { component: 'ConfidenceIndicator', props: { level: 'low', reason: 'Unable to identify product from barcode - need more information to provide accurate analysis' } },
+            { component: 'AIInterpretationLabel', props: { label: 'AI Analysis Incomplete' } },
+            { component: 'ProductHero', props: { 
+              name: productName || 'Unknown Product', 
+              brand: brand || null,
+              nutriScore: null,
+              novaGroup: null,
+              barcode: barcode
+            }},
+            { component: 'ConfidenceIndicator', props: { 
+              level: 'low', 
+              reason: 'Unable to retrieve complete product data from barcode - additional information needed for accurate analysis' 
+            }},
+            { component: 'KeyFindings', props: { findings: [
+              { type: 'warning', title: 'Limited Data Available', detail: 'Product barcode found but ingredient information is incomplete or missing from the database.' },
+              { type: 'neutral', title: 'Why This Happens', detail: 'Some products have limited data in OpenFoodFacts, especially regional or new products.' }
+            ]}},
             { component: 'FailureTransparency', props: {} },
-            { component: 'TextContent', props: { textMarkdown: 'Food Co-Pilot avoids guessing when ingredient disclosure is limited. This helps ensure you get reliable guidance.' } },
-            {
-              component: 'SuggestionChips', props: {
-                suggestions: [
-                  { text: '🔄 Refresh Data', query: barcode ? `refresh:${barcode}` : 'scan another product' },
-                  { text: '📷 Scan Ingredients', query: 'scan_ingredients' },
-                  { text: 'Try another product', query: 'scan another product' }
-                ]
-              }
-            }
+            { component: 'AISummarySection', props: {
+              title: 'What We Know',
+              summary: 'Food Co-Pilot avoids guessing when ingredient disclosure is limited. This ensures you receive reliable, evidence-based guidance rather than speculation.',
+              icon: 'info'
+            }},
+            { component: 'ContextualActions', props: { actions: [
+              { label: 'Scan Ingredients Label', description: 'Take a photo of the ingredients list', icon: 'camera', action: 'scan-ingredients', variant: 'primary' },
+              { label: 'Try Another Product', description: 'Scan a different barcode', icon: 'scan-barcode', action: 'scan-barcode', variant: 'secondary' }
+            ]}},
+            { component: 'SuggestionChips', props: {
+              suggestions: [
+                { text: '📷 Scan Ingredients', query: 'scan_ingredients' },
+                { text: '🔄 Refresh Data', query: barcode ? `refresh:${barcode}` : 'scan another product' },
+                { text: 'Ask about this product', query: `What do you know about ${productName || 'this product'}?` }
+              ]
+            }}
           ]
         }
       },
@@ -108,15 +127,15 @@ async function getAIAnalysis(
     })
   }
 
-  const prompt = `You are receiving ACTUAL PRODUCT DATA that was already fetched from OpenFoodFacts database. Analyze this food product and generate a structured Thesys Generative UI response with reasoning blocks.
+  const prompt = `You are analyzing ACTUAL PRODUCT DATA from OpenFoodFacts database. Generate a comprehensive, structured Thesys Generative UI response.
 
-IMPORTANT: You ARE receiving real product data below. DO NOT say you "cannot access" any database or API. The data has already been retrieved for you. Analyze what is provided.
+CRITICAL: This is REAL DATA already fetched. Analyze it directly - do NOT say you "cannot access" anything.
 
-=== PRODUCT DATA (ALREADY FETCHED) ===
+=== PRODUCT DATA (ALREADY FETCHED FROM OPENFOODFACTS) ===
 Product Name: ${productName}${brand ? ` by ${brand}` : ''}
 Ingredients: ${ingredients || 'Not disclosed on package'}
-NOVA Group: ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'Not calculated'}
-NutriScore: ${nutriScore || 'Not calculated'}
+NOVA Group: ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'Not available'} (1=Minimally processed, 4=Ultra-processed)
+NutriScore: ${nutriScore || 'Not available'} (A=Best, E=Worst)
 ${userDietInfo}
 ${signalSummary}
 ${userConflictsSummary}
@@ -126,153 +145,174 @@ ${flaggedAdditiveSummary ? `Additives of note:\\n${flaggedAdditiveSummary}` : ''
 
 DATA QUALITY: Confidence ${confidenceLevel} - ${confidenceReason}
 
-REQUIRED OUTPUT STRUCTURE (use these components in this order):
+=== REQUIRED OUTPUT STRUCTURE (AI-NATIVE FORMAT) ===
 
-1. **AIInterpretationLabel** - Start with this to label the response as AI interpretation
-   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
+Generate a Card containing these components IN THIS ORDER:
 
-2. **IntentInference** - State what you assume the user wants to know
-   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know if this is safe for regular consumption."}}
+1. **AIInterpretationLabel** - Always start with this
+   {"component": "AIInterpretationLabel", "props": {"label": "AI-Powered Analysis"}}
 
-3. **Header** - Product name with brand
-   {"component": "Header", "props": {"title": "Product Name", "subtitle": "by Brand"}}
+2. **ProductHero** - Product header with scores (REQUIRED)
+   {"component": "ProductHero", "props": {
+     "name": "${productName}",
+     "brand": ${brand ? `"${brand}"` : 'null'},
+     "nutriScore": ${nutriScore ? `"${nutriScore}"` : 'null'},
+     "novaGroup": ${novaGroup !== undefined && novaGroup !== null ? novaGroup : 'null'},
+     "barcode": "${barcode}"
+   }}
 
-4. **ConfidenceIndicator** - Show data confidence level
+3. **IntentInference** - State inferred intent upfront
+   {"component": "IntentInference", "props": {"intent": "You're likely wondering if this product is safe for regular consumption and whether it aligns with your health goals."}}
+
+4. **ConfidenceIndicator** - Show data confidence
    {"component": "ConfidenceIndicator", "props": {"level": "${confidenceLevel}", "reason": "${confidenceReason}"}}
 
-5. **HealthRiskAlerts** (IF health condition risks detected) - Show personalized health alerts
-   {"component": "HealthRiskAlerts", "props": {"alerts": [
-     {"condition": "diabetes", "conditionLabel": "Diabetes", "risk": "high", "reason": "Contains 25g sugars per serving", "recommendation": "Consider sugar-free alternatives"}
+5. **QuickInsights** - Key facts at a glance (generate 3-4 insights)
+   {"component": "QuickInsights", "props": {"insights": [
+     {"icon": "activity", "label": "Processing Level", "value": "NOVA X - Description", "sentiment": "good|neutral|bad"},
+     {"icon": "star", "label": "Nutrition Grade", "value": "NutriScore X", "sentiment": "good|neutral|bad"},
+     {"icon": "beaker", "label": "Additives", "value": "X flagged", "sentiment": "good|neutral|bad"}
    ]}}
 
-6. **SessionMemory** (if user has remembered preferences from session) - Show remembered preferences
-   {"component": "SessionMemory", "props": {"memories": ["user preference 1", "user preference 2"]}}
+6. **HealthRiskAlerts** (ONLY if health risks detected in data above)
 
-7. **ReasoningBlocks** - Structured thinking with these block types:
-   {"component": "ReasoningBlocks", "props": {"blocks": [
-     {"type": "thinking", "content": "What matters to you about this product..."},
-     {"type": "why-matters", "content": "This is significant because..."},
-     {"type": "tradeoffs", "content": "On one hand... on the other hand..."},
-     {"type": "uncertainty", "content": "What we're not certain about..."},
-     {"type": "bottom-line", "content": "The key takeaway is..."}
+7. **KeyFindings** - Structured findings (generate 3-5 findings)
+   {"component": "KeyFindings", "props": {"findings": [
+     {"type": "positive", "title": "Finding title", "detail": "Detailed explanation"},
+     {"type": "warning", "title": "Caution area", "detail": "What to watch out for"},
+     {"type": "negative", "title": "Concern", "detail": "Why this matters"}
+   ]}}
+   Types: positive (green), warning (yellow), negative (red), neutral (gray)
+
+8. **IngredientSpotlight** - Highlight 2-4 notable ingredients
+   {"component": "IngredientSpotlight", "props": {"ingredients": [
+     {"name": "Ingredient Name", "category": "concern|beneficial|neutral|additive", "reason": "Why it matters", "learnMoreQuery": "Tell me about X"}
    ]}}
 
-8. **DecisionVerdict** - Clear verdict card (REQUIRED)
-   {"component": "DecisionVerdict", "props": {
-     "verdict": "safe|occasional|avoid",
-     "summary": "One sentence explaining the verdict"
-   }}
-   - Use "safe" (🟢) for minimally processed, no concerns
-   - Use "occasional" (🟡) for ultra-processed but not harmful
-   - Use "avoid" (🔴) only for genuine health concerns
-
-9. **UncertaintyDisclosure** - What we don't know
-   {"component": "UncertaintyDisclosure", "props": {"items": [
-     "Exact ingredient quantities aren't disclosed",
-     "Assessment assumes typical industry usage"
-   ]}}
-
-10. **AlternativeProducts** (IF alternatives provided) - Show healthier alternatives
-   {"component": "AlternativeProducts", "props": {
-     "category": "snacks",
-     "alternatives": [
-       {"barcode": "123", "name": "Product X", "brand": "Brand Y", "nutriScore": "A", "novaGroup": 1, "whyBetter": ["50% less sugar", "Better NutriScore"], "imageUrl": null}
-     ]
+9. **AISummarySection** - Your synthesized assessment
+   {"component": "AISummarySection", "props": {
+     "title": "My Assessment",
+     "summary": "2-3 sentence synthesis of your overall analysis and recommendation",
+     "icon": "sparkles"
    }}
 
-11. **MomentQuestion** - One contextual clarification
-   {"component": "MomentQuestion", "props": {
-     "question": "Is this for daily use or occasional treat?",
-     "options": [
-       {"label": "Daily use", "query": "Is this safe for daily consumption?"},
-       {"label": "Occasional", "query": "Is this okay as an occasional treat?"}
-     ]
-   }}
+10. **ReasoningBlocks** - Show structured thinking
+    {"component": "ReasoningBlocks", "props": {"blocks": [
+      {"type": "thinking", "content": "What you're likely concerned about..."},
+      {"type": "why-matters", "content": "Why this matters for your health..."},
+      {"type": "tradeoffs", "content": "The benefits vs concerns..."},
+      {"type": "bottom-line", "content": "My recommendation..."}
+    ]}}
 
-12. **SuggestionChips** at the end for follow-up questions
+11. **DecisionVerdict** - REQUIRED clear verdict
+    {"component": "DecisionVerdict", "props": {
+      "verdict": "safe|occasional|avoid",
+      "summary": "Clear one-sentence explanation"
+    }}
+    Rules:
+    - "safe" (🟢): NOVA 1-2, NutriScore A-B, minimal additives
+    - "occasional" (🟡): NOVA 3-4, NutriScore C-D, processed but not harmful
+    - "avoid" (🔴): Contains user's allergens OR genuinely harmful
 
-IMPORTANT GUIDELINES:
-- Always infer user intent upfront - don't ask questions first
-- Be honest about uncertainty - OpenFoodFacts data can be incomplete
-- The verdict must be clear and actionable
-- Include ALL reasoning blocks to show your thinking
-- Label everything as interpretation, not raw data display
-- IF health condition risks are detected, ALWAYS include HealthRiskAlerts component
-- IF healthier alternatives are available, ALWAYS include AlternativeProducts component`
+12. **UncertaintyDisclosure** - What we don't know (2-3 items)
+    {"component": "UncertaintyDisclosure", "props": {"items": [
+      "What we cannot verify or determine from available data"
+    ]}}
 
-  const THESYS_SYSTEM = `You are a health co-pilot that analyzes food products. You MUST respond with Thesys Generative UI JSON format only.
+13. **AlternativeProducts** (ONLY if alternatives provided in data above)
 
-CRITICAL: You will receive ACTUAL PRODUCT DATA that has already been fetched from OpenFoodFacts. NEVER say you "cannot access" databases or APIs. The data is provided directly to you in the user message. Analyze what is given.
+14. **ContextualActions** - Smart next steps
+    {"component": "ContextualActions", "props": {"actions": [
+      {"label": "Find Healthier Options", "description": "Compare with alternatives", "icon": "trending-up", "action": "ask-question", "query": "Show me healthier alternatives to ${productName}", "variant": "primary"},
+      {"label": "Scan Another", "description": "Check a different product", "icon": "scan-barcode", "action": "scan-barcode", "variant": "secondary"}
+    ]}}
 
-Your response must be a valid JSON object with this exact structure:
+15. **SuggestionChips** - Follow-up questions
+    {"component": "SuggestionChips", "props": {"suggestions": [
+      {"text": "Is this safe for children?", "query": "Is ${productName} safe for children?"},
+      {"text": "Explain the additives", "query": "Explain each additive in ${productName}"},
+      {"text": "Daily intake limits", "query": "How much of ${productName} is safe per day?"}
+    ]}}
+
+OUTPUT ONLY VALID JSON with this exact wrapper:
 {
   "component": {
     "component": "Card",
     "props": {
-      "children": [...]
+      "children": [... all components above ...]
+    }
+  },
+  "error": null
+}`
+
+  const THESYS_SYSTEM = `You are an AI Health Co-Pilot that analyzes food products using structured, AI-native interfaces. You MUST respond with Thesys Generative UI JSON format only.
+
+CRITICAL: You will receive ACTUAL PRODUCT DATA already fetched from OpenFoodFacts. NEVER say you "cannot access" anything. Analyze the data provided directly.
+
+Your response must be a valid JSON object:
+{
+  "component": {
+    "component": "Card",
+    "props": {
+      "children": [... components array ...]
     }
   },
   "error": null
 }
 
-=== NEW REASONING & DECISION COMPONENTS ===
+=== AI-NATIVE STRUCTURED COMPONENTS ===
 
-1. AIInterpretationLabel - Label outputs as AI interpretation
-   {"component": "AIInterpretationLabel", "props": {"label": "AI Interpretation"}}
+**ProductHero** - Rich product header with visual scores
+{"component": "ProductHero", "props": {
+  "name": "Product Name", "brand": "Brand or null", 
+  "nutriScore": "a|b|c|d|e or null", "novaGroup": 1-4 or null, "barcode": "123"
+}}
 
-2. IntentInference - State inferred user intent (NO questions first!)
-   {"component": "IntentInference", "props": {"intent": "I'm assuming you want to know..."}}
+**QuickInsights** - At-a-glance key facts (3-4 insights)
+{"component": "QuickInsights", "props": {"insights": [
+  {"icon": "activity|star|beaker|heart", "label": "Label", "value": "Value", "sentiment": "good|neutral|bad"}
+]}}
 
-3. ConfidenceIndicator - Show assessment confidence
-   {"component": "ConfidenceIndicator", "props": {"level": "high|medium|low", "reason": "Why this confidence level"}}
+**KeyFindings** - Structured analysis findings
+{"component": "KeyFindings", "props": {"findings": [
+  {"type": "positive|negative|warning|neutral", "title": "Finding", "detail": "Explanation"}
+]}}
 
-4. HealthRiskAlerts - Personalized health condition alerts (USE IF HEALTH RISKS DETECTED)
-   {"component": "HealthRiskAlerts", "props": {"alerts": [
-     {"condition": "diabetes", "conditionLabel": "Diabetes", "risk": "high|medium|low", "reason": "Contains 25g sugars", "recommendation": "Consider sugar-free alternatives"}
-   ]}}
+**IngredientSpotlight** - Notable ingredients
+{"component": "IngredientSpotlight", "props": {"ingredients": [
+  {"name": "Name", "category": "concern|beneficial|neutral|additive", "reason": "Why notable", "learnMoreQuery": "Question"}
+]}}
 
-5. ReasoningBlocks - Structured thinking sections
-   {"component": "ReasoningBlocks", "props": {"blocks": [
-     {"type": "thinking", "content": "What I think you care about..."},
-     {"type": "why-matters", "content": "Why this matters..."},
-     {"type": "tradeoffs", "content": "Tradeoffs to consider..."},
-     {"type": "uncertainty", "content": "What's uncertain..."},
-     {"type": "bottom-line", "content": "The key decision point..."}
-   ]}}
+**AISummarySection** - Your synthesized assessment
+{"component": "AISummarySection", "props": {"title": "My Assessment", "summary": "2-3 sentence synthesis", "icon": "sparkles"}}
 
-6. DecisionVerdict - REQUIRED bold decision card
-   {"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "Clear explanation"}}
-   - safe (🟢): Safe for daily use
-   - occasional (🟡): Okay occasionally
-   - avoid (🔴): Avoid if health-conscious
+**ContextualActions** - Smart next actions
+{"component": "ContextualActions", "props": {"actions": [
+  {"label": "Action", "description": "What it does", "icon": "icon-name", "action": "scan-barcode|scan-ingredients|ask-question", "query": "optional query", "variant": "primary|secondary"}
+]}}
 
-7. UncertaintyDisclosure - What we don't know
-   {"component": "UncertaintyDisclosure", "props": {"items": ["Unknown 1", "Unknown 2"]}}
+**DecisionVerdict** - REQUIRED clear verdict
+{"component": "DecisionVerdict", "props": {"verdict": "safe|occasional|avoid", "summary": "One sentence"}}
+- safe (🟢): NOVA 1-2, NutriScore A-B, minimal processing
+- occasional (🟡): NOVA 3-4, NutriScore C-D, processed but not harmful  
+- avoid (🔴): Contains user allergens OR genuinely harmful
 
-8. AlternativeProducts - Healthier alternatives (USE IF ALTERNATIVES PROVIDED)
-   {"component": "AlternativeProducts", "props": {"category": "snacks", "alternatives": [
-     {"barcode": "123", "name": "Product X", "brand": "Brand Y", "nutriScore": "A", "novaGroup": 1, "whyBetter": ["50% less sugar"], "imageUrl": null}
-   ]}}
-
-9. MomentQuestion - One contextual clarification (NOT asking first, but offering to refine)
-   {"component": "MomentQuestion", "props": {"question": "...", "options": [{"label": "...", "query": "..."}]}}
-
-10. SessionMemory - Show remembered preferences
-   {"component": "SessionMemory", "props": {"memories": ["prefers natural", "avoids additives"]}}
-
-=== EXISTING COMPONENTS ===
-- Card, Header, MiniCardBlock, MiniCard, DataTile, Icon, TextContent, TagBlock, SectionBlock, List, CalloutV2, SuggestionChips
+**Additional Components**:
+- AIInterpretationLabel, IntentInference, ConfidenceIndicator
+- ReasoningBlocks (blocks array with type: thinking|why-matters|tradeoffs|bottom-line)
+- UncertaintyDisclosure (items array)
+- HealthRiskAlerts (alerts array - USE ONLY if health risks detected)
+- AlternativeProducts (alternatives array - USE ONLY if alternatives provided)
+- SuggestionChips (suggestions array with text and query)
 
 CRITICAL RULES:
-1. ALWAYS start with AIInterpretationLabel
-2. ALWAYS include IntentInference (infer, don't ask)
-3. ALWAYS include DecisionVerdict with clear safe/occasional/avoid
-4. ALWAYS include ReasoningBlocks showing your thinking
-5. ALWAYS include UncertaintyDisclosure
-6. IF health condition risks are provided, ALWAYS include HealthRiskAlerts component
-7. IF alternatives are provided, ALWAYS include AlternativeProducts component  
-8. Add MomentQuestion for context refinement AFTER giving verdict
-9. Output ONLY valid JSON. No markdown, no text before or after.`
+1. Use ProductHero (not plain Header) for product display
+2. ALWAYS include QuickInsights, KeyFindings, AISummarySection
+3. ALWAYS include DecisionVerdict with appropriate verdict
+4. ALWAYS include ContextualActions for next steps
+5. Include HealthRiskAlerts ONLY if health condition risks are in the data
+6. Include AlternativeProducts ONLY if alternatives are provided
+7. Output ONLY valid JSON - no markdown, no text before/after`
 
   try {
     console.log(`[AI] Calling Thesys API for product: ${productName}`)

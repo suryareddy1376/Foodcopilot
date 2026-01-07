@@ -990,6 +990,519 @@ function DecisionSummaryStrip({
   )
 }
 
+// ==========================================
+// NEW STRUCTURED AI-NATIVE COMPONENTS
+// ==========================================
+
+// Product Hero - Enhanced product header with scores
+function ProductHero({
+  name,
+  brand,
+  nutriScore,
+  novaGroup,
+  imageUrl,
+  barcode
+}: {
+  name: string
+  brand?: string
+  nutriScore?: string
+  novaGroup?: number
+  imageUrl?: string
+  barcode?: string
+}) {
+  const getNutriScoreConfig = (score: string) => {
+    const configs: Record<string, { color: string; bg: string; label: string }> = {
+      a: { color: 'text-emerald-700', bg: 'bg-emerald-500', label: 'Excellent' },
+      b: { color: 'text-lime-700', bg: 'bg-lime-500', label: 'Good' },
+      c: { color: 'text-yellow-700', bg: 'bg-yellow-500', label: 'Average' },
+      d: { color: 'text-orange-700', bg: 'bg-orange-500', label: 'Poor' },
+      e: { color: 'text-red-700', bg: 'bg-red-500', label: 'Bad' }
+    }
+    return configs[score?.toLowerCase()] || { color: 'text-slate-700', bg: 'bg-slate-400', label: 'Unknown' }
+  }
+
+  const getNovaConfig = (nova: number) => {
+    const configs: Record<number, { color: string; bg: string; label: string; description: string }> = {
+      1: { color: 'text-emerald-700', bg: 'bg-emerald-500', label: 'Unprocessed', description: 'Natural/minimally processed' },
+      2: { color: 'text-lime-700', bg: 'bg-lime-500', label: 'Processed culinary', description: 'Kitchen ingredients' },
+      3: { color: 'text-yellow-700', bg: 'bg-yellow-500', label: 'Processed', description: 'Modified foods' },
+      4: { color: 'text-red-700', bg: 'bg-red-500', label: 'Ultra-processed', description: 'Industrial formulations' }
+    }
+    return configs[nova] || { color: 'text-slate-700', bg: 'bg-slate-400', label: 'Unknown', description: 'Not classified' }
+  }
+
+  const nutriConfig = nutriScore ? getNutriScoreConfig(nutriScore) : null
+  const novaConfig = novaGroup ? getNovaConfig(novaGroup) : null
+
+  return (
+    <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-5 mb-4 border border-slate-200">
+      <div className="flex items-start gap-4">
+        {imageUrl && (
+          <div className="w-20 h-20 rounded-xl bg-white shadow-sm overflow-hidden flex-shrink-0 border border-slate-200">
+            <img src={imageUrl} alt={name} className="w-full h-full object-contain p-1" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl font-bold text-slate-800 leading-tight">{name}</h2>
+          {brand && <p className="text-sm text-slate-500 mt-1">{brand}</p>}
+          {barcode && <p className="text-xs text-slate-400 font-mono mt-0.5">{barcode}</p>}
+          
+          {/* Score Pills */}
+          <div className="flex items-center gap-3 mt-3">
+            {nutriConfig && (
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg ${nutriConfig.bg} flex items-center justify-center text-white font-bold text-lg`}>
+                  {nutriScore?.toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-600">NutriScore</p>
+                  <p className={`text-xs ${nutriConfig.color}`}>{nutriConfig.label}</p>
+                </div>
+              </div>
+            )}
+            {novaConfig && (
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg ${novaConfig.bg} flex items-center justify-center text-white font-bold text-lg`}>
+                  {novaGroup}
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-600">NOVA</p>
+                  <p className={`text-xs ${novaConfig.color}`}>{novaConfig.label}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Quick Insights Bar - Fast key facts
+function QuickInsights({ 
+  insights 
+}: { 
+  insights: Array<{ icon: string; label: string; value: string; sentiment?: 'good' | 'neutral' | 'bad' }> 
+}) {
+  if (!insights || insights.length === 0) return null
+
+  const getSentimentStyle = (sentiment?: string) => {
+    switch (sentiment) {
+      case 'good': return 'bg-emerald-50 border-emerald-200 text-emerald-700'
+      case 'bad': return 'bg-red-50 border-red-200 text-red-700'
+      default: return 'bg-slate-50 border-slate-200 text-slate-700'
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 my-4">
+      {insights.map((insight, i) => (
+        <div key={i} className={`p-3 rounded-xl border ${getSentimentStyle(insight.sentiment)}`}>
+          <div className="flex items-center gap-2 mb-1">
+            {renderIcon(insight.icon, 'w-4 h-4 opacity-70')}
+            <span className="text-xs font-medium opacity-70">{insight.label}</span>
+          </div>
+          <p className="font-semibold text-sm">{insight.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Analysis Progress Steps - Shows structured analysis approach
+function AnalysisSteps({
+  steps
+}: {
+  steps: Array<{ title: string; description: string; status: 'complete' | 'current' | 'upcoming'; icon?: string }>
+}) {
+  if (!steps || steps.length === 0) return null
+
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'complete': return { bg: 'bg-emerald-500', border: 'border-emerald-500', text: 'text-emerald-700' }
+      case 'current': return { bg: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-700' }
+      default: return { bg: 'bg-slate-300', border: 'border-slate-300', text: 'text-slate-500' }
+    }
+  }
+
+  return (
+    <div className="my-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <ListChecks className="w-4 h-4" />
+        Analysis Approach
+      </h4>
+      <div className="space-y-3">
+        {steps.map((step, i) => {
+          const style = getStatusStyle(step.status)
+          return (
+            <div key={i} className="flex items-start gap-3">
+              <div className="flex flex-col items-center">
+                <div className={`w-6 h-6 rounded-full ${style.bg} flex items-center justify-center`}>
+                  {step.status === 'complete' ? (
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  ) : step.status === 'current' ? (
+                    <Activity className="w-4 h-4 text-white animate-pulse" />
+                  ) : (
+                    <span className="text-white text-xs font-bold">{i + 1}</span>
+                  )}
+                </div>
+                {i < steps.length - 1 && <div className={`w-0.5 h-8 ${style.bg} opacity-30`} />}
+              </div>
+              <div className="flex-1 pb-2">
+                <p className={`font-medium text-sm ${style.text}`}>{step.title}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Key Findings Summary - Structured findings
+function KeyFindings({
+  findings
+}: {
+  findings: Array<{ type: 'positive' | 'negative' | 'neutral' | 'warning'; title: string; detail: string }>
+}) {
+  if (!findings || findings.length === 0) return null
+
+  const getTypeConfig = (type: string) => {
+    switch (type) {
+      case 'positive': return { bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CircleCheck, iconColor: 'text-emerald-600' }
+      case 'negative': return { bg: 'bg-red-50', border: 'border-red-200', icon: CircleX, iconColor: 'text-red-600' }
+      case 'warning': return { bg: 'bg-amber-50', border: 'border-amber-200', icon: CircleAlert, iconColor: 'text-amber-600' }
+      default: return { bg: 'bg-slate-50', border: 'border-slate-200', icon: Info, iconColor: 'text-slate-600' }
+    }
+  }
+
+  // Group findings by type
+  const grouped = findings.reduce((acc, f) => {
+    if (!acc[f.type]) acc[f.type] = []
+    acc[f.type].push(f)
+    return acc
+  }, {} as Record<string, typeof findings>)
+
+  return (
+    <div className="my-4">
+      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <FileText className="w-4 h-4" />
+        Key Findings
+      </h4>
+      <div className="space-y-2">
+        {findings.map((finding, i) => {
+          const config = getTypeConfig(finding.type)
+          const IconComp = config.icon
+          return (
+            <div key={i} className={`${config.bg} ${config.border} border rounded-xl p-3`}>
+              <div className="flex items-start gap-3">
+                <IconComp className={`w-5 h-5 ${config.iconColor} flex-shrink-0 mt-0.5`} />
+                <div>
+                  <p className="font-medium text-sm text-slate-800">{finding.title}</p>
+                  <p className="text-xs text-slate-600 mt-1">{parseMarkdownBold(finding.detail)}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Ingredient Spotlight - Highlight specific ingredients
+function IngredientSpotlight({
+  ingredients
+}: {
+  ingredients: Array<{
+    name: string
+    category: 'concern' | 'beneficial' | 'neutral' | 'additive'
+    reason: string
+    learnMoreQuery?: string
+  }>
+}) {
+  if (!ingredients || ingredients.length === 0) return null
+
+  const handlers = useActionHandlers()
+
+  const getCategoryConfig = (category: string) => {
+    switch (category) {
+      case 'concern': return { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200', icon: AlertTriangle }
+      case 'beneficial': return { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle }
+      case 'additive': return { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', icon: Beaker }
+      default: return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', icon: Info }
+    }
+  }
+
+  return (
+    <div className="my-4">
+      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <Beaker className="w-4 h-4" />
+        Ingredient Spotlight
+      </h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {ingredients.map((ing, i) => {
+          const config = getCategoryConfig(ing.category)
+          const IconComp = config.icon
+          return (
+            <div key={i} className={`${config.bg} ${config.border} border rounded-xl p-3`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <IconComp className={`w-4 h-4 ${config.text} flex-shrink-0 mt-0.5`} />
+                  <div>
+                    <p className={`font-semibold text-sm ${config.text}`}>{ing.name}</p>
+                    <p className="text-xs text-slate-600 mt-0.5">{ing.reason}</p>
+                  </div>
+                </div>
+                {ing.learnMoreQuery && (
+                  <button
+                    onClick={() => handlers.onAskQuestion?.(ing.learnMoreQuery!)}
+                    className="text-xs text-slate-500 hover:text-slate-700 underline flex-shrink-0"
+                  >
+                    Learn more
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Nutrition Quick View - Compact nutrition facts
+function NutritionQuickView({
+  nutrients,
+  servingSize
+}: {
+  nutrients: Array<{ name: string; value: number; unit: string; dailyValue?: number; status?: 'low' | 'moderate' | 'high' }>
+  servingSize?: string
+}) {
+  if (!nutrients || nutrients.length === 0) return null
+
+  const getStatusStyle = (status?: string) => {
+    switch (status) {
+      case 'low': return 'bg-emerald-500'
+      case 'high': return 'bg-red-500'
+      default: return 'bg-yellow-500'
+    }
+  }
+
+  return (
+    <div className="my-4 p-4 bg-white rounded-xl border border-slate-200">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <Scale className="w-4 h-4" />
+          Nutrition Quick View
+        </h4>
+        {servingSize && <span className="text-xs text-slate-500">Per {servingSize}</span>}
+      </div>
+      <div className="space-y-3">
+        {nutrients.map((nutrient, i) => (
+          <div key={i}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm text-slate-700">{nutrient.name}</span>
+              <span className="text-sm font-medium text-slate-800">
+                {nutrient.value}{nutrient.unit}
+                {nutrient.dailyValue && (
+                  <span className="text-xs text-slate-500 ml-1">({nutrient.dailyValue}% DV)</span>
+                )}
+              </span>
+            </div>
+            {nutrient.dailyValue !== undefined && (
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${getStatusStyle(nutrient.status)} rounded-full transition-all`}
+                  style={{ width: `${Math.min(nutrient.dailyValue, 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Contextual Actions - Smart action suggestions based on analysis
+function ContextualActions({
+  actions
+}: {
+  actions: Array<{
+    label: string
+    description: string
+    icon: string
+    action: 'scan-barcode' | 'scan-ingredients' | 'ask-question' | 'compare' | 'view-history'
+    query?: string
+    variant?: 'primary' | 'secondary'
+  }>
+}) {
+  if (!actions || actions.length === 0) return null
+
+  const handlers = useActionHandlers()
+
+  const handleAction = (action: typeof actions[0]) => {
+    switch (action.action) {
+      case 'scan-barcode':
+        handlers.onScanBarcode?.()
+        break
+      case 'scan-ingredients':
+        handlers.onScanIngredients?.()
+        break
+      case 'ask-question':
+        handlers.onAskQuestion?.(action.query || action.label)
+        break
+      case 'compare':
+        handlers.onCompareProducts?.([])
+        break
+      case 'view-history':
+        handlers.onViewHistory?.()
+        break
+    }
+  }
+
+  return (
+    <div className="my-4">
+      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <Zap className="w-4 h-4" />
+        What's Next
+      </h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {actions.map((action, i) => (
+          <button
+            key={i}
+            onClick={() => handleAction(action)}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              action.variant === 'primary'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-emerald-500 text-white hover:shadow-lg hover:shadow-emerald-500/25'
+                : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                action.variant === 'primary' ? 'bg-white/20' : 'bg-emerald-50'
+              }`}>
+                {renderIcon(action.icon, `w-4 h-4 ${action.variant === 'primary' ? 'text-white' : 'text-emerald-600'}`)}
+              </div>
+              <div>
+                <p className={`font-medium text-sm ${action.variant === 'primary' ? 'text-white' : 'text-slate-800'}`}>
+                  {action.label}
+                </p>
+                <p className={`text-xs mt-0.5 ${action.variant === 'primary' ? 'text-white/80' : 'text-slate-500'}`}>
+                  {action.description}
+                </p>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Summary Section with AI badge
+function AISummarySection({
+  title,
+  summary,
+  icon
+}: {
+  title: string
+  summary: string
+  icon?: string
+}) {
+  return (
+    <div className="my-4 p-4 bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl border border-violet-200">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+          {icon ? renderIcon(icon, 'w-5 h-5 text-white') : <Sparkles className="w-5 h-5 text-white" />}
+        </div>
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="font-semibold text-slate-800">{title}</h4>
+            <span className="px-2 py-0.5 bg-violet-200 text-violet-700 text-xs font-medium rounded-full">AI Summary</span>
+          </div>
+          <p className="text-sm text-slate-700 leading-relaxed">{parseMarkdownBold(summary)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Comparison View - For comparing with alternatives
+function ComparisonView({
+  current,
+  alternative
+}: {
+  current: { name: string; nutriScore?: string; novaGroup?: number; highlights: string[] }
+  alternative: { name: string; nutriScore?: string; novaGroup?: number; highlights: string[] }
+}) {
+  const getNutriColor = (score?: string) => {
+    const colors: Record<string, string> = { a: 'bg-emerald-500', b: 'bg-lime-500', c: 'bg-yellow-500', d: 'bg-orange-500', e: 'bg-red-500' }
+    return colors[score?.toLowerCase() || ''] || 'bg-slate-400'
+  }
+
+  const getNovaColor = (nova?: number) => {
+    const colors: Record<number, string> = { 1: 'bg-emerald-500', 2: 'bg-lime-500', 3: 'bg-yellow-500', 4: 'bg-red-500' }
+    return colors[nova || 0] || 'bg-slate-400'
+  }
+
+  return (
+    <div className="my-4 grid grid-cols-2 gap-3">
+      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+        <p className="text-xs font-medium text-slate-500 mb-2">Current</p>
+        <p className="font-semibold text-slate-800 text-sm mb-2">{current.name}</p>
+        <div className="flex items-center gap-2 mb-3">
+          {current.nutriScore && (
+            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNutriColor(current.nutriScore)}`}>
+              {current.nutriScore.toUpperCase()}
+            </span>
+          )}
+          {current.novaGroup && (
+            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNovaColor(current.novaGroup)}`}>
+              NOVA {current.novaGroup}
+            </span>
+          )}
+        </div>
+        <ul className="space-y-1">
+          {current.highlights.map((h, i) => (
+            <li key={i} className="text-xs text-slate-600 flex items-start gap-1">
+              <Minus className="w-3 h-3 mt-0.5 text-slate-400" />
+              {h}
+            </li>
+          ))}
+        </ul>
+      </div>
+      
+      <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+        <p className="text-xs font-medium text-emerald-600 mb-2">Better Option</p>
+        <p className="font-semibold text-emerald-800 text-sm mb-2">{alternative.name}</p>
+        <div className="flex items-center gap-2 mb-3">
+          {alternative.nutriScore && (
+            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNutriColor(alternative.nutriScore)}`}>
+              {alternative.nutriScore.toUpperCase()}
+            </span>
+          )}
+          {alternative.novaGroup && (
+            <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${getNovaColor(alternative.novaGroup)}`}>
+              NOVA {alternative.novaGroup}
+            </span>
+          )}
+        </div>
+        <ul className="space-y-1">
+          {alternative.highlights.map((h, i) => (
+            <li key={i} className="text-xs text-emerald-700 flex items-start gap-1">
+              <CheckCircle className="w-3 h-3 mt-0.5" />
+              {h}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 // Failure Transparency State - When not enough information
 function FailureTransparency({ onTryAnother, onAskQuestion }: { onTryAnother?: () => void; onAskQuestion?: () => void }) {
   const handlers = useActionHandlers()
@@ -1880,6 +2393,32 @@ function renderThesysComponent(component: ThesysComponent): React.ReactNode {
       />
     case 'AlternativeProducts':
       return <AlternativeProducts alternatives={props.alternatives || []} category={props.category} />
+    // NEW STRUCTURED AI-NATIVE COMPONENTS
+    case 'ProductHero':
+      return <ProductHero 
+        name={props.name || 'Unknown Product'} 
+        brand={props.brand}
+        nutriScore={props.nutriScore}
+        novaGroup={props.novaGroup}
+        imageUrl={props.imageUrl}
+        barcode={props.barcode}
+      />
+    case 'QuickInsights':
+      return <QuickInsights insights={props.insights || []} />
+    case 'AnalysisSteps':
+      return <AnalysisSteps steps={props.steps || []} />
+    case 'KeyFindings':
+      return <KeyFindings findings={props.findings || []} />
+    case 'IngredientSpotlight':
+      return <IngredientSpotlight ingredients={props.ingredients || []} />
+    case 'NutritionQuickView':
+      return <NutritionQuickView nutrients={props.nutrients || []} servingSize={props.servingSize} />
+    case 'ContextualActions':
+      return <ContextualActions actions={props.actions || []} />
+    case 'AISummarySection':
+      return <AISummarySection title={props.title || ''} summary={props.summary || ''} icon={props.icon} />
+    case 'ComparisonView':
+      return <ComparisonView current={props.current} alternative={props.alternative} />
     default:
       console.warn(`Unknown Thesys component: ${type}`)
       return <div className="text-red-500">Unknown component: {type}</div>
